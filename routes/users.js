@@ -6,9 +6,9 @@ const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 const router = express.Router();
 
 // Get all users
-router.get('/', authMiddleware, roleMiddleware('admin'), (req, res) => {
+router.get('/', authMiddleware, roleMiddleware('admin'), async (req, res) => {
   try {
-    const users = all('SELECT id, username, role, real_name, phone, created_at FROM users ORDER BY id');
+    const users = await all('SELECT id, username, role, real_name, phone, created_at FROM users ORDER BY id');
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -23,14 +23,14 @@ router.post('/', authMiddleware, roleMiddleware('admin'), async (req, res) => {
       return res.status(400).json({ error: '请填写用户名、密码和角色' });
     }
     
-    const existing = get('SELECT id FROM users WHERE username = ?', [username]);
+    const existing = await get('SELECT id FROM users WHERE username = $1', [username]);
     if (existing) {
       return res.status(400).json({ error: '用户名已存在' });
     }
     
     const hashedPassword = await bcrypt.hash(password, 10);
-    run(
-      'INSERT INTO users (username, password, role, real_name, phone) VALUES (?, ?, ?, ?, ?)',
+    await run(
+      'INSERT INTO users (username, password, role, real_name, phone) VALUES ($1, $2, $3, $4, $5)',
       [username, hashedPassword, role, real_name || '', phone || '']
     );
     
@@ -51,7 +51,7 @@ router.put('/me/password', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: '新密码至少6位' });
     }
     
-    const user = get('SELECT * FROM users WHERE id = ?', [req.session.userId]);
+    const user = await get('SELECT * FROM users WHERE id = $1', [req.session.userId]);
     if (!user) {
       return res.status(404).json({ error: '用户不存在' });
     }
@@ -62,7 +62,7 @@ router.put('/me/password', authMiddleware, async (req, res) => {
     }
     
     const hashed = await bcrypt.hash(newPassword, 10);
-    run('UPDATE users SET password = ? WHERE id = ?', [hashed, req.session.userId]);
+    await run('UPDATE users SET password = $1 WHERE id = $2', [hashed, req.session.userId]);
     
     res.json({ message: '密码修改成功' });
   } catch (err) {

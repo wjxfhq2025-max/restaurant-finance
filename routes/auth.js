@@ -12,7 +12,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: '请输入用户名和密码' });
     }
 
-    const user = get('SELECT * FROM users WHERE username = ?', [username]);
+    const user = await get('SELECT * FROM users WHERE username = $1', [username]);
 
     if (!user) {
       return res.status(401).json({ error: '用户名或密码错误' });
