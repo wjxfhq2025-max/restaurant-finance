@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>餐饮店财务管理</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="app-header" id="appHeader">
+      <h1 id="headerTitle">🍽️ 餐饮店财务管理</h1>
+      <div class="header-actions" id="headerActions"></div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="app-main" id="appMain">
+      <div class="loading-spinner" id="globalLoading">
+        <div class="spinner"></div>
+        <p>加载中...</p>
+      </div>
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav" id="bottomNav" style="display:none;">
+      <a href="#/home" class="nav-item active" data-page="home">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">首页</span>
+      </a>
+      <a href="#/record" class="nav-item" data-page="record">
+        <span class="nav-icon">📝</span>
+        <span class="nav-label">记账</span>
+      </a>
+      <a href="#/requests" class="nav-item" data-page="requests">
+        <span class="nav-icon">📋</span>
+        <span class="nav-label">申请</span>
+      </a>
+      <a href="#/profile" class="nav-item" data-page="profile">
+        <span class="nav-icon">👤</span>
+        <span class="nav-label">我的</span>
+      </a>
+    </nav>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Confirm Modal -->
+    <div class="modal-overlay" id="confirmModal" style="display:none;">
+      <div class="modal-box">
+        <p id="confirmMessage"></p>
+        <div class="modal-actions">
+          <button class="btn btn-default" id="confirmCancel">取消</button>
+          <button class="btn btn-primary" id="confirmOk">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Image Preview Modal -->
+    <div class="modal-overlay" id="imageModal" style="display:none;">
+      <div class="image-preview-container">
+        <button class="image-close" id="imageClose">✕</button>
+        <img id="imagePreview" src="" alt="预览">
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/pages/login.js"></script>
+  <script src="/js/pages/home.js"></script>
+  <script src="/js/pages/record.js"></script>
+  <script src="/js/pages/transactions.js"></script>
+  <script src="/js/pages/requests.js"></script>
+  <script src="/js/pages/request-form.js"></script>
+  <script src="/js/pages/request-detail.js"></script>
+  <script src="/js/pages/approve.js"></script>
+  <script src="/js/pages/profile.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Database (will be created fresh on server)
+data/
+
+# Uploads (user uploaded files)
+uploads/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test
+coverage/
