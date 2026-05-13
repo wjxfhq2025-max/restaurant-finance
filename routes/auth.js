@@ -61,8 +61,8 @@ router.get('/me', (req, res) => {
 module.exports = router;
 
 // ===== 调试接口：强制重建数据库并插入默认用户 =====
-// 访问: POST /api/auth/force-seed
-router.post('/force-seed', async (req, res) => {
+// 访问: GET /api/auth/force-seed （浏览器直接访问）
+router.get('/force-seed', async (req, res) => {
   try {
     console.log('🔧 收到强制重建数据库请求...');
     const result = await forceSeed();
