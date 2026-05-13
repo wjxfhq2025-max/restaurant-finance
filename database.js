@@ -219,26 +219,30 @@ async function initDatabase() {
       try { await client.query(sql); } catch (e) { /* 表已存在 */ }
     }
 
-    // Seed: 如果没有用户则插入默认用户
-    const userResult = await client.query('SELECT COUNT(*) as cnt FROM users');
-    if (parseInt(userResult.rows[0].cnt) === 0) {
-      console.log('🌱 正在插入默认用户...');
-      const defaultUsers = [
-        { username: 'admin', password: 'admin123', role: 'admin', real_name: '系统管理员' },
-        { username: 'purchaser1', password: 'purchase123', role: 'purchaser', real_name: '采购员小张' },
-        { username: 'supervisor', password: 'super123', role: 'supervisor', real_name: '张主管' },
-        { username: 'finance', password: 'finance123', role: 'finance', real_name: '李财务' },
-        { username: 'shareholder', password: 'share123', role: 'shareholder', real_name: '王股东' }
-      ];
-      for (const u of defaultUsers) {
-        const hash = await bcrypt.hash(u.password, 10);
-        await client.query(
-          "INSERT INTO users (username, password, role, real_name) VALUES ($1, $2, $3, $4)",
-          [u.username, hash, u.role, u.real_name]
-        );
-      }
-      console.log(`🌱 已插入 ${defaultUsers.length} 个默认用户`);
+    // 确保默认用户存在（每次启动都执行 UPSERT）
+    console.log('🌱 确保默认用户存在...');
+    const defaultUsers = [
+      { username: 'admin', password: 'admin123', role: 'admin', real_name: '系统管理员' },
+      { username: 'purchaser1', password: 'purchase123', role: 'purchaser', real_name: '采购员小张' },
+      { username: 'supervisor', password: 'super123', role: 'supervisor', real_name: '张主管' },
+      { username: 'finance', password: 'finance123', role: 'finance', real_name: '李财务' },
+      { username: 'shareholder', password: 'share123', role: 'shareholder', real_name: '王股东' }
+    ];
+    
+    for (const u of defaultUsers) {
+      const hash = await bcrypt.hash(u.password, 10);
+      await client.query(
+        `INSERT INTO users (username, password, role, real_name) 
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (username) DO UPDATE SET 
+           password = EXCLUDED.password,
+           role = EXCLUDED.role,
+           real_name = EXCLUDED.real_name`,
+        [u.username, hash, u.role, u.real_name]
+      );
+      console.log(`  ✅ ${u.username} / ${u.password} (${u.role})`);
     }
+    console.log(`🌱 默认用户已确保存在（共 ${defaultUsers.length} 个）`);
 
     await client.query('COMMIT');
     console.log('✅ 数据库初始化成功 (PostgreSQL)');
