@@ -58,7 +58,57 @@ router.get('/me', (req, res) => {
   });
 });
 
-module.exports = router;
+// ===== 调试接口：查看数据库状态 =====
+router.get('/debug', async (req, res) => {
+  try {
+    const { Pool } = require('pg');
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    });
+    
+    // 检查 DATABASE_URL
+    const dbUrlSet = !!process.env.DATABASE_URL;
+    const dbUrlPreview = process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 30) + '...' : 'NOT SET';
+    
+    // 尝试查询
+    let userCount = 0;
+    let users = [];
+    let tableExists = false;
+    
+    try {
+      const tableCheck = await pool.query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')");
+      tableExists = tableCheck.rows[0].exists;
+      
+      if (tableExists) {
+        const countResult = await pool.query('SELECT COUNT(*) as cnt FROM users');
+        userCount = parseInt(countResult.rows[0].cnt);
+        
+        if (userCount > 0) {
+          const usersResult = await pool.query('SELECT id, username, role, real_name FROM users');
+          users = usersResult.rows;
+        }
+      }
+    } catch (e) {
+      return res.json({
+        error: 'Database query failed',
+        message: e.message,
+        DATABASE_URL_set: dbUrlSet,
+        DATABASE_URL_preview: dbUrlPreview
+      });
+    }
+    
+    res.json({
+      DATABASE_URL_set: dbUrlSet,
+      DATABASE_URL_preview: dbUrlPreview,
+      users_table_exists: tableExists,
+      user_count: userCount,
+      users: users
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ===== 调试接口：强制重建数据库并插入默认用户 =====
 // 访问: GET /api/auth/force-seed （浏览器直接访问）
