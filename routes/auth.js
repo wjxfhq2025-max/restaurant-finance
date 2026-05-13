@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { get, run } = require('../database');
+const { get, run, forceSeed } = require('../database');
 
 const router = express.Router();
 
@@ -59,3 +59,25 @@ router.get('/me', (req, res) => {
 });
 
 module.exports = router;
+
+// ===== 调试接口：强制重建数据库并插入默认用户 =====
+// 访问: POST /api/auth/force-seed
+router.post('/force-seed', async (req, res) => {
+  try {
+    console.log('🔧 收到强制重建数据库请求...');
+    const result = await forceSeed();
+    res.json({
+      message: '数据库已强制重建',
+      users: [
+        { username: 'admin', password: 'admin123', role: '管理员' },
+        { username: 'purchaser1', password: 'purchase123', role: '采购员' },
+        { username: 'supervisor', password: 'super123', role: '主管' },
+        { username: 'finance', password: 'finance123', role: '财务' },
+        { username: 'shareholder', password: 'share123', role: '股东' }
+      ]
+    });
+  } catch (err) {
+    console.error('❌ 强制重建失败:', err);
+    res.status(500).json({ error: '强制重建失败: ' + err.message });
+  }
+});
