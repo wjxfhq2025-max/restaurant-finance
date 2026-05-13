@@ -20,6 +20,16 @@ app.use(session({
 // Serve uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// ===== 测试端点（诊断部署状态）=====
+app.get('/api/test', (req, res) => {
+  res.json({
+    message: 'Test endpoint working!',
+    timestamp: new Date().toISOString(),
+    commit: '4342189',
+    env: process.env.NODE_ENV || 'development'
+  });
+});
+
 // API routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/transactions', require('./routes/transactions'));
