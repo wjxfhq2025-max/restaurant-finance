@@ -131,3 +131,5 @@ router.get('/force-seed', async (req, res) => {
     res.status(500).json({ error: '强制重建失败: ' + err.message });
   }
 });
+
+module.exports = router;
