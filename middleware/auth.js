@@ -8,7 +8,7 @@ function authMiddleware(req, res, next) {
   next();
 }
 
-function roleMiddleware(...roles) {
+function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.session || !req.session.userId) {
       return res.status(401).json({ error: '请先登录' });
@@ -20,8 +20,11 @@ function roleMiddleware(...roles) {
   };
 }
 
+// 兼容别名
+const roleMiddleware = requireRole;
+
 function optionalAuth(req, res, next) {
-  next(); // Don't require auth
+  next();
 }
 
-module.exports = { authMiddleware, roleMiddleware, optionalAuth };
+module.exports = { authMiddleware, requireRole, roleMiddleware, optionalAuth };
