@@ -64,15 +64,15 @@ router.get('/debug', async (req, res) => {
     let userCount = 0;
     let users = [];
     let tableExists = false;
-    
+
     try {
       const tableCheck = await get("SELECT to_regclass('users') as exists");
       tableExists = !!tableCheck?.exists;
-      
+
       if (tableExists) {
         const countResult = await get('SELECT COUNT(*) as cnt FROM users');
         userCount = countResult ? countResult.cnt : 0;
-        
+
         if (userCount > 0) {
           users = await all('SELECT id, username, role, real_name FROM users');
         }
@@ -83,7 +83,7 @@ router.get('/debug', async (req, res) => {
         message: e.message
       });
     }
-    
+
     res.json({
       database_url_set: !!process.env.DATABASE_URL,
       users_table_exists: tableExists,
@@ -96,7 +96,6 @@ router.get('/debug', async (req, res) => {
 });
 
 // ===== 调试接口：强制重建数据库并插入默认用户 =====
-// 访问: GET /api/auth/force-seed （浏览器直接访问）
 router.get('/force-seed', async (req, res) => {
   try {
     console.log('🔧 收到强制重建数据库请求...');
@@ -112,4 +111,9 @@ router.get('/force-seed', async (req, res) => {
       ]
     });
   } catch (err) {
-    console
+    console.error('❌ 强制重建失败:', err);
+    res.status(500).json({ error: '强制重建失败：' + err.message });
+  }
+});
+
+module.exports = router;
