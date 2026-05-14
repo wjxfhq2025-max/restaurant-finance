@@ -165,31 +165,46 @@ async function seedDefaultUsersInternal(client) {
   console.log(`🌱 默认用户已确保存在（共 ${defaultUsers.length} 个）`);
 }
 
-// 初始化：建表 + seed
+// 初始化：建表 + seed（带重试）
 async function initDatabase() {
   console.log('📊 初始化数据库 (PostgreSQL)...');
   console.log('DATABASE_URL 是否设置:', !!process.env.DATABASE_URL);
-  
-  try {
-    // 测试连接
-    const result = await pool.query('SELECT NOW() as now');
-    console.log('✅ PostgreSQL 连接成功:', result.rows[0].now);
-    
-    // 建表
-    await createTablesInternal();
-    console.log('✅ 数据库表已确保存在');
-    
-    // 确保默认用户存在
-    await seedDefaultUsersInternal();
-    
-    console.log('✅ 数据库初始化成功');
-  } catch (err) {
-    console.error('❌ 数据库初始化失败:', err.message);
-    console.error('请确认 DATABASE_URL 环境变量是否正确配置');
-    throw err;
+  if (process.env.DATABASE_URL) {
+    // 只打印前20字符，隐藏密码
+    const masked = process.env.DATABASE_URL.substring(0, 20) + '...';
+    console.log('DATABASE_URL (前20字符):', masked);
   }
   
-  return { get, all, run, runAndGetId };
+  let lastError = null;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      console.log(`🔄 第 ${attempt}/5 次尝试连接数据库...`);
+      
+      // 测试连接
+      const result = await pool.query('SELECT NOW() as now');
+      console.log('✅ PostgreSQL 连接成功:', result.rows[0].now);
+      
+      // 建表
+      await createTablesInternal();
+      console.log('✅ 数据库表已确保存在');
+      
+      // 确保默认用户存在
+      await seedDefaultUsersInternal();
+      
+      console.log('✅ 数据库初始化成功');
+      return { get, all, run, runAndGetId };
+    } catch (err) {
+      lastError = err;
+      console.error(`❌ 第 ${attempt} 次尝试失败:`, err.message);
+      if (attempt < 5) {
+        console.log(`⏳ 等待 ${attempt * 2} 秒后重试...`);
+        await new Promise(r => setTimeout(r, attempt * 2000));
+      }
+    }
+  }
+  
+  console.error('❌ 数据库初始化失败（已重试5次）:', lastError.message);
+  throw lastError;
 }
 
 module.exports = { initDatabase, forceSeed, get, all, run, runAndGetId };

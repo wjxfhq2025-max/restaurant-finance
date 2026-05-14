@@ -58,14 +58,8 @@ async function start() {
     });
   } catch (err) {
     console.error('❌ 启动失败:', err.message);
-    console.error('应用将在没有数据库的情况下启动（仅静态页面可用）');
-    
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log('');
-      console.log('⚠️  餐饮店财务管理系统（降级模式 - 数据库不可用）');
-      console.log(`   访问地址: http://localhost:${PORT}`);
-      console.log('');
-    });
+    console.error('完整错误:', err);
+    process.exit(1);
   }
 }
 
