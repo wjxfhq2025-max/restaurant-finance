@@ -1,8 +1,22 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
 const { get, all, run } = require('../database');
 const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Multer setup for receipt uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.join(__dirname, '..', 'uploads'));
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`);
+  }
+});
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // List transactions
 router.get('/', authMiddleware, async (req, res) => {
@@ -25,19 +39,21 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// Create transaction
-router.post('/', authMiddleware, async (req, res) => {
+// Create transaction (with optional receipt upload)
+router.post('/', authMiddleware, upload.single('receipt'), async (req, res) => {
   try {
     const { type, category, amount, description } = req.body;
     if (!type || !category || !amount) {
       return res.status(400).json({ error: '缺少必填字段' });
     }
     
+    const receiptPath = req.file ? '/uploads/' + req.file.filename : null;
+    
     const result = await run(
-      'INSERT INTO transactions (type, category, amount, description, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [type, category, amount, description || '', req.session.userId]
+      'INSERT INTO transactions (type, category, amount, description, receipt_path, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [type, category, amount, description || '', receiptPath, req.session.userId]
     );
-    res.json({ id: result?.id, message: '创建成功' });
+    res.json({ id: result.lastInsertRowid, message: '创建成功' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
