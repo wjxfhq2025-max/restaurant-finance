@@ -12,7 +12,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: '请输入用户名和密码' });
     }
 
-    const user = get('SELECT * FROM users WHERE username = ?', [username]);
+    const user = await get('SELECT * FROM users WHERE username = $1', [username]);
 
     if (!user) {
       return res.status(401).json({ error: '用户名或密码错误' });
@@ -59,41 +59,33 @@ router.get('/me', (req, res) => {
 });
 
 // ===== 调试接口：查看数据库状态 =====
-router.get('/debug', (req, res) => {
+router.get('/debug', async (req, res) => {
   try {
-    const fs = require('fs');
-    const path = require('path');
-    const dbFilePath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'data', 'finance.db');
-    const dbExists = fs.existsSync(dbFilePath);
-    
     let userCount = 0;
     let users = [];
     let tableExists = false;
     
     try {
-      const tableCheck = get("SELECT name FROM sqlite_master WHERE type='table' AND name='users'");
-      tableExists = !!tableCheck;
+      const tableCheck = await get("SELECT to_regclass('users') as exists");
+      tableExists = !!tableCheck?.exists;
       
       if (tableExists) {
-        const countResult = get('SELECT COUNT(*) as cnt FROM users');
+        const countResult = await get('SELECT COUNT(*) as cnt FROM users');
         userCount = countResult ? countResult.cnt : 0;
         
         if (userCount > 0) {
-          users = all('SELECT id, username, role, real_name FROM users');
+          users = await all('SELECT id, username, role, real_name FROM users');
         }
       }
     } catch (e) {
       return res.json({
         error: 'Database query failed',
-        message: e.message,
-        db_path: dbFilePath,
-        db_exists: dbExists
+        message: e.message
       });
     }
     
     res.json({
-      db_path: dbFilePath,
-      db_exists: dbExists,
+      database_url_set: !!process.env.DATABASE_URL,
       users_table_exists: tableExists,
       user_count: userCount,
       users: users
@@ -108,7 +100,7 @@ router.get('/debug', (req, res) => {
 router.get('/force-seed', async (req, res) => {
   try {
     console.log('🔧 收到强制重建数据库请求...');
-    const result = forceSeed();
+    await forceSeed();
     res.json({
       message: '数据库已强制重建',
       users: [
@@ -120,9 +112,4 @@ router.get('/force-seed', async (req, res) => {
       ]
     });
   } catch (err) {
-    console.error('❌ 强制重建失败:', err);
-    res.status(500).json({ error: '强制重建失败: ' + err.message });
-  }
-});
-
-module.exports = router;
+    console

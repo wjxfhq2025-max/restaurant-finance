@@ -32,7 +32,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // SPA fallback - serve index.html for all non-API routes
 app.get('*', (req, res) => {
-  // Skip API routes
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Not found' });
   }
@@ -45,21 +44,29 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || '服务器错误' });
 });
 
-// Start (async because sql.js needs to load WASM)
+// Start
 async function start() {
-  console.log('📊 正在初始化数据库 (sql.js / SQLite WASM)...');
-  await initDatabase();
-  console.log('✅ 数据库初始化完成');
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log('');
-    console.log('🍽️  餐饮店财务管理系统 (SQLite 版本)');
-    console.log(`   访问地址: http://localhost:${PORT}`);
-    console.log('');
-  });
+  try {
+    await initDatabase();
+    console.log('✅ 数据库初始化完成');
+    
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log('');
+      console.log('🍽️  餐饮店财务管理系统');
+      console.log(`   访问地址: http://localhost:${PORT}`);
+      console.log('');
+    });
+  } catch (err) {
+    console.error('❌ 启动失败:', err.message);
+    console.error('应用将在没有数据库的情况下启动（仅静态页面可用）');
+    
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log('');
+      console.log('⚠️  餐饮店财务管理系统（降级模式 - 数据库不可用）');
+      console.log(`   访问地址: http://localhost:${PORT}`);
+      console.log('');
+    });
+  }
 }
 
-start().catch(err => {
-  console.error('❌ 启动失败:', err);
-  process.exit(1);
-});
+start();

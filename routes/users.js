@@ -1,70 +1,69 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { get, all, run } = require('../database');
-const { authMiddleware, roleMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Get all users
-router.get('/', authMiddleware, roleMiddleware('admin'), (req, res) => {
+// List users (admin only)
+router.get('/', authMiddleware, requireRole('管理员'), async (req, res) => {
   try {
-    const users = all('SELECT id, username, role, real_name, phone, created_at FROM users ORDER BY id');
-    res.json(users);
+    const rows = await all('SELECT id, username, role, real_name, created_at FROM users ORDER BY id');
+    res.json(rows || []);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Create user
-router.post('/', authMiddleware, roleMiddleware('admin'), (req, res) => {
+// Create user (admin only)
+router.post('/', authMiddleware, requireRole('管理员'), async (req, res) => {
   try {
-    const { username, password, role, real_name, phone } = req.body;
+    const { username, password, role, real_name } = req.body;
     if (!username || !password || !role) {
-      return res.status(400).json({ error: '请填写用户名、密码和角色' });
+      return res.status(400).json({ error: '缺少必填字段' });
     }
     
-    const existing = get('SELECT id FROM users WHERE username = ?', [username]);
+    const existing = await get('SELECT id FROM users WHERE username = $1', [username]);
     if (existing) {
       return res.status(400).json({ error: '用户名已存在' });
     }
     
-    const hashedPassword = bcrypt.hashSync(password, 10);
-    run(
-      'INSERT INTO users (username, password, role, real_name, phone) VALUES (?, ?, ?, ?, ?)',
-      [username, hashedPassword, role, real_name || '', phone || '']
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const result = await run(
+      'INSERT INTO users (username, password, role, real_name) VALUES ($1, $2, $3, $4) RETURNING id',
+      [username, hashedPassword, role, real_name || username]
     );
-    
-    res.json({ message: '用户创建成功' });
+    res.json({ id: result?.id, message: '创建成功' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Change own password
-router.put('/me/password', authMiddleware, (req, res) => {
+// Update user
+router.put('/:id', authMiddleware, async (req, res) => {
   try {
-    const { oldPassword, newPassword } = req.body;
-    if (!oldPassword || !newPassword) {
-      return res.status(400).json({ error: '请填写完整信息' });
-    }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: '新密码至少6位' });
-    }
+    const { id } = req.params;
+    const { password, role, real_name } = req.body;
     
-    const user = get('SELECT * FROM users WHERE id = ?', [req.session.userId]);
-    if (!user) {
-      return res.status(404).json({ error: '用户不存在' });
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      await run('UPDATE users SET password=$1, role=$2, real_name=$3 WHERE id=$4', 
+        [hashedPassword, role, real_name, id]);
+    } else {
+      await run('UPDATE users SET role=$1, real_name=$2 WHERE id=$3', [role, real_name, id]);
     }
-    
-    const valid = bcrypt.compareSync(oldPassword, user.password);
-    if (!valid) {
-      return res.status(400).json({ error: '原密码错误' });
-    }
-    
-    const hashed = bcrypt.hashSync(newPassword, 10);
-    run('UPDATE users SET password = ? WHERE id = ?', [hashed, req.session.userId]);
-    
-    res.json({ message: '密码修改成功' });
+    res.json({ message: '更新成功' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete user (admin only)
+router.delete('/:id', authMiddleware, requireRole('管理员'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    await run('DELETE FROM users WHERE id = $1', [id]);
+    res.json({ message: '删除成功' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

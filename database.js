@@ -1,133 +1,95 @@
-const initSqlJs = require('sql.js');
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
-const path = require('path');
-const fs = require('fs');
 
-// sql.js WASM 文件路径
-const wasmPath = path.join(__dirname, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
+// PostgreSQL 连接池
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
-// 数据库实例（初始化后赋值）
-let db = null;
-let dbPath;
-let saveTimer = null;
-
-// 保存数据库到文件（防抖，避免频繁写入）
-function saveDb() {
-  if (!db || dbPath === ':memory:') return;
-  try {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    const dir = path.dirname(dbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(dbPath, buffer);
-  } catch (err) {
-    console.error('保存数据库失败:', err.message);
-  }
-}
-
-function scheduleSave() {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveDb, 1000);
-}
+// 监听连接错误
+pool.on('error', (err) => {
+  console.error('PostgreSQL 连接池错误:', err.message);
+});
 
 // 兼容接口：get(sql, params) → 返回单行对象或 undefined
-function get(sql, params = []) {
-  try {
-    const stmt = db.prepare(sql);
-    if (params.length > 0) stmt.bind(params);
-    if (stmt.step()) {
-      const row = stmt.getAsObject();
-      stmt.free();
-      return row;
-    }
-    stmt.free();
-    return undefined;
-  } catch (err) {
-    console.error('DB get error:', err.message, 'SQL:', sql);
-    return undefined;
-  }
+async function get(sql, params = []) {
+  const result = await pool.query(sql, params);
+  return result.rows.length > 0 ? result.rows[0] : undefined;
 }
 
 // 兼容接口：all(sql, params) → 返回对象数组
-function all(sql, params = []) {
-  try {
-    const stmt = db.prepare(sql);
-    if (params.length > 0) stmt.bind(params);
-    const rows = [];
-    while (stmt.step()) {
-      rows.push(stmt.getAsObject());
-    }
-    stmt.free();
-    return rows;
-  } catch (err) {
-    console.error('DB all error:', err.message, 'SQL:', sql);
-    return [];
-  }
+async function all(sql, params = []) {
+  const result = await pool.query(sql, params);
+  return result.rows;
 }
 
 // 兼容接口：run(sql, params) → 返回 { lastInsertRowid, changes }
-function run(sql, params = []) {
-  try {
-    db.run(sql, params);
-    scheduleSave();
-    return {
-      lastInsertRowid: get('SELECT last_insert_rowid() as id').id || 0,
-      changes: db.getRowsModified()
-    };
-  } catch (err) {
-    console.error('DB run error:', err.message, 'SQL:', sql);
-    throw err;
-  }
+async function run(sql, params = []) {
+  const result = await pool.query(sql, params);
+  return {
+    lastInsertRowid: result.rowCount > 0 ? (result.rows[0]?.id || 0) : 0,
+    changes: result.rowCount
+  };
 }
 
-// runAndGetId（与 run 相同，SQLite 自动提供 lastInsertRowid）
-function runAndGetId(sql, params = []) {
-  return run(sql, params);
+// 获取 INSERT 后的 last insert id（PostgreSQL 用 RETURNING）
+async function runAndGetId(sql, params = []) {
+  const returnSql = sql.trim().endsWith(';') 
+    ? sql.slice(0, -1) + ' RETURNING id' 
+    : sql + ' RETURNING id';
+  const result = await pool.query(returnSql, params);
+  return {
+    lastInsertRowid: result.rows.length > 0 ? result.rows[0].id : 0,
+    changes: result.rowCount
+  };
 }
 
 // 强制重建表并插入默认用户
-function forceSeed() {
+async function forceSeed() {
+  const client = await pool.connect();
   try {
-    console.log('🗑️  开始强制重建数据库...');
+    await client.query('BEGIN');
     
-    db.run(`
-      DROP TABLE IF EXISTS approval_tokens;
-      DROP TABLE IF EXISTS approvals;
-      DROP TABLE IF EXISTS purchase_requests;
-      DROP TABLE IF EXISTS transactions;
-      DROP TABLE IF EXISTS users;
-    `);
+    await client.query('DROP TABLE IF EXISTS approval_tokens CASCADE');
+    await client.query('DROP TABLE IF EXISTS approvals CASCADE');
+    await client.query('DROP TABLE IF EXISTS purchase_requests CASCADE');
+    await client.query('DROP TABLE IF EXISTS transactions CASCADE');
+    await client.query('DROP TABLE IF EXISTS users CASCADE');
     
     console.log('🗑️  已删除旧表');
-    createTables();
-    console.log('✅ 已重建所有表');
-    seedDefaultUsers();
-    saveDb();
     
+    await createTablesInternal(client);
+    console.log('✅ 已重建所有表');
+    
+    await seedDefaultUsersInternal(client);
+    
+    await client.query('COMMIT');
+    console.log('✅ 强制重建完成');
     return { success: true };
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('❌ 强制重建失败:', err);
     throw err;
+  } finally {
+    client.release();
   }
 }
 
-// 创建表
-function createTables() {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+// 创建表（使用 client 参数，支持事务）
+async function createTablesInternal(client) {
+  const queries = [
+    `CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'purchaser',
       real_name TEXT,
       phone TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS transactions (
+      id SERIAL PRIMARY KEY,
       type TEXT NOT NULL,
       amount REAL NOT NULL,
       category TEXT NOT NULL,
@@ -136,11 +98,10 @@ function createTables() {
       created_by INTEGER,
       source TEXT DEFAULT 'direct',
       source_id INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    
-    CREATE TABLE IF NOT EXISTS purchase_requests (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS purchase_requests (
+      id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
       amount REAL NOT NULL,
       category TEXT NOT NULL,
@@ -150,35 +111,37 @@ function createTables() {
       status TEXT DEFAULT 'pending_supervisor',
       rejected_by INTEGER,
       reject_reason TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    
-    CREATE TABLE IF NOT EXISTS approvals (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS approvals (
+      id SERIAL PRIMARY KEY,
       request_id INTEGER,
       approver_id INTEGER,
       stage TEXT NOT NULL,
       decision TEXT NOT NULL,
       comment TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    
-    CREATE TABLE IF NOT EXISTS approval_tokens (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS approval_tokens (
+      id SERIAL PRIMARY KEY,
       token TEXT UNIQUE NOT NULL,
       request_id INTEGER,
       stage TEXT NOT NULL,
       approver_id INTEGER,
-      expires_at DATETIME NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
       used INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`
+  ];
+  
+  for (const sql of queries) {
+    await (client || pool).query(sql);
+  }
 }
 
-// 插入默认用户
-function seedDefaultUsers() {
+// 插入默认用户（使用 client 参数，支持事务）
+async function seedDefaultUsersInternal(client) {
   const defaultUsers = [
     { username: 'admin', password: 'admin123', role: 'admin', real_name: '系统管理员' },
     { username: 'purchaser1', password: 'purchase123', role: 'purchaser', real_name: '采购员小张' },
@@ -187,65 +150,44 @@ function seedDefaultUsers() {
     { username: 'shareholder', password: 'share123', role: 'shareholder', real_name: '王股东' }
   ];
   
+  const q = client || pool;
+  
   for (const u of defaultUsers) {
-    const existing = get('SELECT id FROM users WHERE username = ?', [u.username]);
-    if (!existing) {
-      const hash = bcrypt.hashSync(u.password, 10);
-      db.run('INSERT INTO users (username, password, role, real_name) VALUES (?, ?, ?, ?)',
-        [u.username, hash, u.role, u.real_name]);
-      console.log(`  ✅ ${u.username} / ${u.password} (${u.role})`);
-    } else {
-      const hash = bcrypt.hashSync(u.password, 10);
-      db.run('UPDATE users SET password = ?, role = ?, real_name = ? WHERE username = ?',
-        [hash, u.role, u.real_name, u.username]);
-      console.log(`  ✅ ${u.username} / ${u.password} (${u.role}) [已更新]`);
-    }
+    const hash = await bcrypt.hash(u.password, 10);
+    await q.query(
+      `INSERT INTO users (username, password, role, real_name) 
+       VALUES ($1, $2, $3, $4) 
+       ON CONFLICT (username) DO UPDATE SET password = $2, role = $3, real_name = $4`,
+      [u.username, hash, u.role, u.real_name]
+    );
+    console.log(`  ✅ ${u.username} / ${u.password} (${u.role})`);
   }
   console.log(`🌱 默认用户已确保存在（共 ${defaultUsers.length} 个）`);
 }
 
-// 初始化数据库（异步，在 server.js 中 await 调用）
+// 初始化：建表 + seed
 async function initDatabase() {
-  console.log('📊 初始化数据库 (sql.js / SQLite WASM)...');
+  console.log('📊 初始化数据库 (PostgreSQL)...');
+  console.log('DATABASE_URL 是否设置:', !!process.env.DATABASE_URL);
   
-  const SQL = await initSqlJs({
-    locateFile: (file) => path.join(__dirname, 'node_modules', 'sql.js', 'dist', file)
-  });
-  
-  dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'data', 'finance.db');
-  
-  // 尝试加载现有数据库文件
   try {
-    const dir = path.dirname(dbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    // 测试连接
+    const result = await pool.query('SELECT NOW() as now');
+    console.log('✅ PostgreSQL 连接成功:', result.rows[0].now);
     
-    if (fs.existsSync(dbPath)) {
-      const fileBuffer = fs.readFileSync(dbPath);
-      db = new SQL.Database(fileBuffer);
-      console.log('✅ 已加载现有数据库:', dbPath);
-    } else {
-      db = new SQL.Database();
-      console.log('✅ 已创建新数据库');
-    }
+    // 建表
+    await createTablesInternal();
+    console.log('✅ 数据库表已确保存在');
+    
+    // 确保默认用户存在
+    await seedDefaultUsersInternal();
+    
+    console.log('✅ 数据库初始化成功');
   } catch (err) {
-    console.warn('⚠️ 无法加载文件数据库，使用内存数据库:', err.message);
-    db = new SQL.Database();
-    dbPath = ':memory:';
+    console.error('❌ 数据库初始化失败:', err.message);
+    console.error('请确认 DATABASE_URL 环境变量是否正确配置');
+    throw err;
   }
-  
-  // 建表
-  createTables();
-  console.log('✅ 数据库表已确保存在');
-  
-  // 确保默认用户存在
-  seedDefaultUsers();
-  
-  // 保存到文件
-  saveDb();
-  
-  console.log('✅ 数据库初始化成功');
   
   return { get, all, run, runAndGetId };
 }

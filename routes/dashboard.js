@@ -5,101 +5,35 @@ const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 
 // Dashboard stats
-router.get('/stats', authMiddleware, (req, res) => {
+router.get('/stats', authMiddleware, async (req, res) => {
   try {
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
     
-    // Monthly totals
-    const monthly = get(
-      `SELECT 
-        COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as month_income,
-        COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as month_expense
-       FROM transactions WHERE created_at >= ?`,
+    const monthly = await get(
+      `SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as month_income,
+              COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as month_expense
+       FROM transactions WHERE created_at >= $1`,
       [monthStart]
     );
     
-    // Total all time
-    const total = get(
-      `SELECT 
-        COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as total_income,
-        COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as total_expense
+    const total = await get(
+      `SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as total_income,
+              COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as total_expense
        FROM transactions`
     );
     
-    // Pending requests count
-    let pendingCount = 0;
-    const role = req.session.role;
-    if (role === 'supervisor' || role === 'admin') {
-      const supervisorPending = get("SELECT COUNT(*) as c FROM purchase_requests WHERE status = 'pending_supervisor'");
-      pendingCount += supervisorPending.c;
-    }
-    if (role === 'finance' || role === 'admin') {
-      const financePending = get("SELECT COUNT(*) as c FROM purchase_requests WHERE status = 'pending_finance'");
-      pendingCount += financePending.c;
-    }
-    if (role === 'shareholder' || role === 'admin') {
-      const shareholderPending = get("SELECT COUNT(*) as c FROM purchase_requests WHERE status = 'pending_shareholder'");
-      pendingCount += shareholderPending.c;
-    }
-    
-    // Recent transactions
-    const recent = all(
-      `SELECT t.*, u.real_name as creator_name 
-       FROM transactions t LEFT JOIN users u ON t.created_by = u.id 
-       ORDER BY t.created_at DESC LIMIT 10`
-    );
+    const pendingCount = await get(`SELECT COUNT(*) as cnt FROM requests WHERE status='pending'`);
+    const recentTrans = await all(`SELECT * FROM transactions ORDER BY created_at DESC LIMIT 5`);
     
     res.json({
-      monthly: {
-        income: Number(monthly.month_income),
-        expense: Number(monthly.month_expense),
-        profit: Number(monthly.month_income) - Number(monthly.month_expense)
-      },
-      total: {
-        income: Number(total.total_income),
-        expense: Number(total.total_expense),
-        profit: Number(total.total_income) - Number(total.total_expense)
-      },
-      pendingCount,
-      recent
+      monthIncome: monthly?.month_income || 0,
+      monthExpense: monthly?.month_expense || 0,
+      totalIncome: total?.total_income || 0,
+      totalExpense: total?.total_expense || 0,
+      pendingRequests: pendingCount?.cnt || 0,
+      recentTransactions: recentTrans || []
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Category breakdown for current month
-router.get('/categories', authMiddleware, (req, res) => {
-  try {
-    const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-    
-    const expenseCategories = all(
-      `SELECT category, SUM(amount) as total, COUNT(*) as count 
-       FROM transactions WHERE type = 'expense' AND created_at >= ? 
-       GROUP BY category ORDER BY total DESC`,
-      [monthStart]
-    );
-    
-    const incomeCategories = all(
-      `SELECT category, SUM(amount) as total, COUNT(*) as count 
-       FROM transactions WHERE type = 'income' AND created_at >= ? 
-       GROUP BY category ORDER BY total DESC`,
-      [monthStart]
-    );
-    
-    // Daily totals for the month (for chart)
-    const daily = all(
-      `SELECT date(created_at) as date, 
-        SUM(CASE WHEN type='income' THEN amount ELSE 0 END) as income,
-        SUM(CASE WHEN type='expense' THEN amount ELSE 0 END) as expense
-       FROM transactions WHERE created_at >= ? 
-       GROUP BY date(created_at) ORDER BY date`,
-      [monthStart]
-    );
-    
-    res.json({ expenseCategories, incomeCategories, daily });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
