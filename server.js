@@ -45,15 +45,21 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || '服务器错误' });
 });
 
-// Start
-console.log('📊 正在初始化数据库 (SQLite)...');
-initDatabase();
-console.log('✅ 数据库初始化完成');
+// Start (async because sql.js needs to load WASM)
+async function start() {
+  console.log('📊 正在初始化数据库 (sql.js / SQLite WASM)...');
+  await initDatabase();
+  console.log('✅ 数据库初始化完成');
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('');
-  console.log('🍽️  餐饮店财务管理系统 (SQLite 版本)');
-  console.log(`   本地访问地址: http://localhost:${PORT}`);
-  console.log(`   Render 部署后自动使用云端地址`);
-  console.log('');
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log('');
+    console.log('🍽️  餐饮店财务管理系统 (SQLite 版本)');
+    console.log(`   访问地址: http://localhost:${PORT}`);
+    console.log('');
+  });
+}
+
+start().catch(err => {
+  console.error('❌ 启动失败:', err);
+  process.exit(1);
 });

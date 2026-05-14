@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { get, run, forceSeed, db } = require('../database');
+const { get, all, run, forceSeed } = require('../database');
 
 const router = express.Router();
 
@@ -58,43 +58,41 @@ router.get('/me', (req, res) => {
   });
 });
 
-// ===== 调试接口：查看数据库状态（SQLite 版本）=====
-router.get('/debug', async (req, res) => {
+// ===== 调试接口：查看数据库状态 =====
+router.get('/debug', (req, res) => {
   try {
-    // 检查数据库文件是否存在
     const fs = require('fs');
     const path = require('path');
-    const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'data', 'finance.db');
-    const dbExists = fs.existsSync(dbPath);
+    const dbFilePath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'data', 'finance.db');
+    const dbExists = fs.existsSync(dbFilePath);
     
-    // 查询用户表和用户数据
     let userCount = 0;
     let users = [];
     let tableExists = false;
     
     try {
-      const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
+      const tableCheck = get("SELECT name FROM sqlite_master WHERE type='table' AND name='users'");
       tableExists = !!tableCheck;
       
       if (tableExists) {
-        const countResult = db.prepare('SELECT COUNT(*) as cnt FROM users').get();
-        userCount = countResult.cnt;
+        const countResult = get('SELECT COUNT(*) as cnt FROM users');
+        userCount = countResult ? countResult.cnt : 0;
         
         if (userCount > 0) {
-          users = db.prepare('SELECT id, username, role, real_name FROM users').all();
+          users = all('SELECT id, username, role, real_name FROM users');
         }
       }
     } catch (e) {
       return res.json({
         error: 'Database query failed',
         message: e.message,
-        db_path: dbPath,
+        db_path: dbFilePath,
         db_exists: dbExists
       });
     }
     
     res.json({
-      db_path: dbPath,
+      db_path: dbFilePath,
       db_exists: dbExists,
       users_table_exists: tableExists,
       user_count: userCount,
