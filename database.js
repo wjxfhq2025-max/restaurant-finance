@@ -4,8 +4,22 @@ const path = require('path');
 const fs = require('fs');
 
 // 数据库连接（SQLite）
-const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'data', 'finance.db');
-const db = new Database(dbPath);
+// 先尝试文件数据库，失败则回退到内存数据库
+let db;
+let dbPath;
+try {
+  dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'data', 'finance.db');
+  const dataDir = path.dirname(dbPath);
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  db = new Database(dbPath);
+  console.log('✅ SQLite 文件数据库:', dbPath);
+} catch (err) {
+  console.warn('⚠️ 无法创建文件数据库，使用内存数据库:', err.message);
+  db = new Database(':memory:');
+  dbPath = ':memory:';
+}
 
 // 启用外键约束
 db.pragma('foreign_keys = ON');
