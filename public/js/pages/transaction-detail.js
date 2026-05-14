@@ -32,9 +32,11 @@ const TransactionDetailPage = {
       receiptHtml = `
         <div class="card" style="margin-top:16px;">
           <div class="card-title">📎 票据图片</div>
-          <div style="text-align:center;">
-            <img src="${imgSrc}" alt="票据" style="max-width:100%;max-height:280px;border-radius:8px;cursor:pointer;object-fit:cover;" onclick="Utils.showImage('${imgSrc}')">
-            <p style="font-size:12px;color:var(--text-muted);margin-top:6px;">点击图片可放大查看</p>
+          <div style="text-align:center;padding:12px;">
+            <img id="receiptImg" src="${imgSrc}" alt="票据" style="max-width:100%;max-height:320px;border-radius:8px;cursor:pointer;object-fit:cover;border:1px solid var(--border-color);" 
+              onerror="this.style.display='none';this.nextElementSibling.style.display='block';"
+              onclick="Utils.showImage('${imgSrc}')">
+            <p id="receiptError" style="display:none;color:var(--text-muted);font-size:13px;">⚠️ 图片加载失败，可能已被清理</p>
           </div>
         </div>
       `;
