@@ -26,6 +26,7 @@ app.use('/api/transactions', require('./routes/transactions'));
 app.use('/api/requests', require('./routes/requests'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/reports', require('./routes/reports'));
 
 // Serve static files (SPA)
 app.use(express.static(path.join(__dirname, 'public')));

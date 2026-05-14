@@ -26,6 +26,7 @@ const App = {
     '/request-form': () => RequestFormPage.render(App.getMain()),
     '/profile':    () => ProfilePage.render(App.getMain()),
     '/approve':    (token) => ApprovePage.render(App.getMain(), token),
+    '/reports':    () => ReportsPage.render(App.getMain()),
   },
   
   getMain() {
@@ -116,6 +117,7 @@ const App = {
     else if (hash.startsWith('#/transactions')) title = '📊 收支记录';
     else if (hash.startsWith('#/requests')) title = '📋 采购申请';
     else if (hash.startsWith('#/request-form')) title = '📋 新建申请';
+    else if (hash.startsWith('#/reports')) title = '📊 财务报表';
     else if (hash.startsWith('#/profile')) title = '👤 我的';
     
     let actions = '';

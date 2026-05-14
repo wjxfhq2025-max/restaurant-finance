@@ -23,16 +23,55 @@ router.get('/stats', authMiddleware, async (req, res) => {
        FROM transactions`
     );
     
-    const pendingCount = await get(`SELECT COUNT(*) as cnt FROM requests WHERE status='pending'`);
+    const pendingCount = await get(`SELECT COUNT(*) as cnt FROM purchase_requests WHERE status LIKE 'pending%'`);
     const recentTrans = await all(`SELECT * FROM transactions ORDER BY created_at DESC LIMIT 5`);
     
+    const monthIncome = Number(monthly?.month_income || 0);
+    const monthExpense = Number(monthly?.month_expense || 0);
+    
     res.json({
-      monthIncome: monthly?.month_income || 0,
-      monthExpense: monthly?.month_expense || 0,
-      totalIncome: total?.total_income || 0,
-      totalExpense: total?.total_expense || 0,
-      pendingRequests: pendingCount?.cnt || 0,
-      recentTransactions: recentTrans || []
+      pendingCount: pendingCount?.cnt || 0,
+      monthly: {
+        income: monthIncome,
+        expense: monthExpense,
+        profit: monthIncome - monthExpense
+      },
+      total: {
+        income: Number(total?.total_income || 0),
+        expense: Number(total?.total_expense || 0)
+      },
+      recent: recentTrans || []
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Dashboard categories
+router.get('/categories', authMiddleware, async (req, res) => {
+  try {
+    const now = new Date();
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    
+    const incomeCategories = await all(
+      `SELECT category, COALESCE(SUM(amount), 0) as total
+       FROM transactions
+       WHERE type='income' AND created_at >= $1
+       GROUP BY category ORDER BY total DESC`,
+      [monthStart]
+    );
+    
+    const expenseCategories = await all(
+      `SELECT category, COALESCE(SUM(amount), 0) as total
+       FROM transactions
+       WHERE type='expense' AND created_at >= $1
+       GROUP BY category ORDER BY total DESC`,
+      [monthStart]
+    );
+    
+    res.json({
+      incomeCategories: incomeCategories || [],
+      expenseCategories: expenseCategories || []
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
