@@ -1,22 +1,59 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const { get, all, run } = require('../database');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('✅ uploads 目录已创建:', uploadsDir);
+}
+
 // Multer setup for receipt uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '..', 'uploads'));
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     cb(null, `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`);
   }
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// File filter: only allow images
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('只支持上传图片文件'), false);
+  }
+};
+
+const upload = multer({ 
+  storage, 
+  fileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+});
+
+// Wrap upload middleware with error handling
+const uploadMiddleware = (req, res, next) => {
+  upload.single('receipt')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: '图片文件过大，请选择小于 10MB 的图片' });
+      }
+      return res.status(400).json({ error: '文件上传失败: ' + err.message });
+    } else if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+};
 
 // List transactions
 router.get('/', authMiddleware, async (req, res) => {
@@ -62,7 +99,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 // Create transaction (with optional receipt upload)
-router.post('/', authMiddleware, upload.single('receipt'), async (req, res) => {
+router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
   try {
     const { type, category, amount, description } = req.body;
     if (!type || !category || !amount) {
@@ -71,11 +108,11 @@ router.post('/', authMiddleware, upload.single('receipt'), async (req, res) => {
     
     const receiptPath = req.file ? '/uploads/' + req.file.filename : null;
     
-    const result = await run(
-      'INSERT INTO transactions (type, category, amount, description, receipt_path, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+    await run(
+      'INSERT INTO transactions (type, category, amount, description, receipt_path, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
       [type, category, amount, description || '', receiptPath, req.session.userId]
     );
-    res.json({ id: result.lastInsertRowid, message: '创建成功' });
+    res.json({ id: 0, message: '创建成功', receipt: receiptPath });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
