@@ -9,9 +9,7 @@ const App = {
     '/record':     (type) => RecordPage.render(App.getMain(), type || 'expense'),
     '/transactions': (action, id) => {
       if (action === 'detail' && id) {
-        TransactionsPage.render(App.getMain(), 'detail');
-        // Need to load detail
-        RequestDetailPage.render(App.getMain(), id);
+        TransactionDetailPage.render(App.getMain(), id);
       } else {
         TransactionsPage.render(App.getMain());
       }

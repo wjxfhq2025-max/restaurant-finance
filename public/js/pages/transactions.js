@@ -135,7 +135,7 @@ const TransactionsPage = {
           </div>
         ` : '';
         
-        const item = Utils.el('div', { className: 'tx-item', onclick: () => {} }, [
+        const item = Utils.el('div', { className: 'tx-item', onclick: () => App.navigate('/transactions/detail/' + tx.id) }, [
           Utils.el('div', { className: `tx-icon ${tx.type}` }, [Utils.getCategoryIcon(tx.category)]),
           Utils.el('div', { className: 'tx-info' }, [
             Utils.el('div', { className: 'tx-category' }, [tx.category + (tx.source === 'purchase_request' ? ' (采购)' : '')]),

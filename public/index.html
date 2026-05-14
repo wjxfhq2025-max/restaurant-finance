@@ -76,10 +76,14 @@ const API = {
   baseUrl: '/api',
   
   async request(method, path, data) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+    
     const opts = {
       method,
       headers: {},
-      credentials: 'same-origin'
+      credentials: 'same-origin',
+      signal: controller.signal
     };
     
     if (data instanceof FormData) {
@@ -89,14 +93,17 @@ const API = {
       opts.body = JSON.stringify(data);
     }
     
-    const res = await fetch(this.baseUrl + path, opts);
-    const json = await res.json();
-    
-    if (!res.ok) {
-      throw new Error(json.error || '请求失败');
+    try {
+      const res = await fetch(this.baseUrl + path, opts);
+      clearTimeout(timeout);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '请求失败 (' + res.status + ')');
+      return json;
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') throw new Error('请求超时，请检查网络或重试');
+      throw err;
     }
-    
-    return json;
   },
   
   login(username, password) {
@@ -187,6 +194,7 @@ const API = {
   <script src="/js/pages/request-form.js?v=2"></script>
   <script src="/js/pages/request-detail.js?v=2"></script>
   <script src="/js/pages/approve.js?v=2"></script>
+  <script src="/js/pages/transaction-detail.js?v=1"></script>
   <script src="/js/pages/profile.js?v=2"></script>
   <script src="/js/pages/reports.js?v=1"></script>
   <script src="/js/app.js?v=3"></script>
