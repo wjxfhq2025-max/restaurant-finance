@@ -3,6 +3,9 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
 
+// sql.js WASM 文件路径
+const wasmPath = path.join(__dirname, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
+
 // 数据库实例（初始化后赋值）
 let db = null;
 let dbPath;
@@ -205,7 +208,9 @@ function seedDefaultUsers() {
 async function initDatabase() {
   console.log('📊 初始化数据库 (sql.js / SQLite WASM)...');
   
-  const SQL = await initSqlJs();
+  const SQL = await initSqlJs({
+    locateFile: (file) => path.join(__dirname, 'node_modules', 'sql.js', 'dist', file)
+  });
   
   dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'data', 'finance.db');
   
