@@ -9,14 +9,5 @@ services:
         value: production
       - key: SESSION_SECRET
         generateValue: true
-    databases:
-      - name: restaurant-finance-db
-        databaseName: restaurant_finance
     healthCheckPath: /
     autoDeploy: true
-
-databases:
-  - name: restaurant-finance-db
-    databaseName: restaurant_finance
-    user: restaurant_finance_user
-    plan: free

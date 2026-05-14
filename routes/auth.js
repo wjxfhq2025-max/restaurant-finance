@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { get, run, forceSeed } = require('../database');
+const { get, run, forceSeed, db } = require('../database');
 
 const router = express.Router();
 
@@ -12,7 +12,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: '请输入用户名和密码' });
     }
 
-    const user = await get('SELECT * FROM users WHERE username = $1', [username]);
+    const user = get('SELECT * FROM users WHERE username = ?', [username]);
 
     if (!user) {
       return res.status(401).json({ error: '用户名或密码错误' });
@@ -58,49 +58,44 @@ router.get('/me', (req, res) => {
   });
 });
 
-// ===== 调试接口：查看数据库状态 =====
+// ===== 调试接口：查看数据库状态（SQLite 版本）=====
 router.get('/debug', async (req, res) => {
   try {
-    const { Pool } = require('pg');
-    const pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-    });
+    // 检查数据库文件是否存在
+    const fs = require('fs');
+    const path = require('path');
+    const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'data', 'finance.db');
+    const dbExists = fs.existsSync(dbPath);
     
-    // 检查 DATABASE_URL
-    const dbUrlSet = !!process.env.DATABASE_URL;
-    const dbUrlPreview = process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 30) + '...' : 'NOT SET';
-    
-    // 尝试查询
+    // 查询用户表和用户数据
     let userCount = 0;
     let users = [];
     let tableExists = false;
     
     try {
-      const tableCheck = await pool.query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')");
-      tableExists = tableCheck.rows[0].exists;
+      const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
+      tableExists = !!tableCheck;
       
       if (tableExists) {
-        const countResult = await pool.query('SELECT COUNT(*) as cnt FROM users');
-        userCount = parseInt(countResult.rows[0].cnt);
+        const countResult = db.prepare('SELECT COUNT(*) as cnt FROM users').get();
+        userCount = countResult.cnt;
         
         if (userCount > 0) {
-          const usersResult = await pool.query('SELECT id, username, role, real_name FROM users');
-          users = usersResult.rows;
+          users = db.prepare('SELECT id, username, role, real_name FROM users').all();
         }
       }
     } catch (e) {
       return res.json({
         error: 'Database query failed',
         message: e.message,
-        DATABASE_URL_set: dbUrlSet,
-        DATABASE_URL_preview: dbUrlPreview
+        db_path: dbPath,
+        db_exists: dbExists
       });
     }
     
     res.json({
-      DATABASE_URL_set: dbUrlSet,
-      DATABASE_URL_preview: dbUrlPreview,
+      db_path: dbPath,
+      db_exists: dbExists,
       users_table_exists: tableExists,
       user_count: userCount,
       users: users
@@ -115,7 +110,7 @@ router.get('/debug', async (req, res) => {
 router.get('/force-seed', async (req, res) => {
   try {
     console.log('🔧 收到强制重建数据库请求...');
-    const result = await forceSeed();
+    const result = forceSeed();
     res.json({
       message: '数据库已强制重建',
       users: [

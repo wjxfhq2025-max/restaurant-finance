@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const { get, all, run, runAndGetId } = require('../database');
+const { get, all, run } = require('../database');
 const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
@@ -33,51 +33,49 @@ const upload = multer({
 });
 
 // Get transactions list
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, (req, res) => {
   try {
     const { type, page = 1, limit = 20, search, category, date_from, date_to } = req.query;
     let where = ['1=1'];
     let params = [];
-    let idx = 1;
     
     if (type) {
-      where.push(`t.type = $${idx++}`);
+      where.push(`t.type = ?`);
       params.push(type);
     }
     if (search) {
-      where.push(`(t.description LIKE $${idx++} OR t.category LIKE $${idx++})`);
+      where.push(`(t.description LIKE ? OR t.category LIKE ?)`);
       params.push(`%${search}%`, `%${search}%`);
     }
     if (category) {
-      where.push(`t.category = $${idx++}`);
+      where.push(`t.category = ?`);
       params.push(category);
     }
     if (date_from) {
-      where.push(`t.created_at >= $${idx++}`);
+      where.push(`t.created_at >= ?`);
       params.push(date_from);
     }
     if (date_to) {
-      where.push(`t.created_at <= $${idx++}`);
+      where.push(`t.created_at <= ?`);
       params.push(date_to + ' 23:59:59');
     }
     
     const whereClause = where.join(' AND ');
     
     // Count
-    const countResult = await get(`SELECT COUNT(*) as total FROM transactions t WHERE ${whereClause}`, params);
+    const countResult = get(`SELECT COUNT(*) as total FROM transactions t WHERE ${whereClause}`, params);
     const total = countResult.total;
     
     // List
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    params.push(parseInt(limit), offset);
-    const rows = await all(
+    const rows = all(
       `SELECT t.*, u.real_name as creator_name 
        FROM transactions t 
        LEFT JOIN users u ON t.created_by = u.id 
        WHERE ${whereClause} 
        ORDER BY t.created_at DESC 
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      params
+       LIMIT ? OFFSET ?`,
+      [...params, parseInt(limit), offset]
     );
     
     res.json({
@@ -92,7 +90,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // Create transaction
-router.post('/', authMiddleware, upload.single('receipt'), async (req, res) => {
+router.post('/', authMiddleware, upload.single('receipt'), (req, res) => {
   try {
     const { type, amount, category, description } = req.body;
     
@@ -102,8 +100,8 @@ router.post('/', authMiddleware, upload.single('receipt'), async (req, res) => {
     
     const receiptPath = req.file ? req.file.filename : null;
     
-    await run(
-      'INSERT INTO transactions (type, amount, category, description, receipt_path, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+    run(
+      'INSERT INTO transactions (type, amount, category, description, receipt_path, created_by) VALUES (?, ?, ?, ?, ?, ?)',
       [type, parseFloat(amount), category, description || '', receiptPath, req.session.userId]
     );
     
@@ -114,13 +112,13 @@ router.post('/', authMiddleware, upload.single('receipt'), async (req, res) => {
 });
 
 // Get single transaction
-router.get('/:id', authMiddleware, async (req, res) => {
+router.get('/:id', authMiddleware, (req, res) => {
   try {
-    const row = await get(
+    const row = get(
       `SELECT t.*, u.real_name as creator_name 
        FROM transactions t 
        LEFT JOIN users u ON t.created_by = u.id 
-       WHERE t.id = $1`,
+       WHERE t.id = ?`,
       [req.params.id]
     );
     
@@ -135,9 +133,9 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 // Delete transaction
-router.delete('/:id', authMiddleware, async (req, res) => {
+router.delete('/:id', authMiddleware, (req, res) => {
   try {
-    await run('DELETE FROM transactions WHERE id = $1', [req.params.id]);
+    run('DELETE FROM transactions WHERE id = ?', [req.params.id]);
     res.json({ message: '记录已删除' });
   } catch (err) {
     res.status(500).json({ error: err.message });

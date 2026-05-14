@@ -7,5 +7,5 @@ module.exports = {
   maxUploadSize: 10 * 1024 * 1024, // 10MB
   approvalTokenExpiryDays: 7,
   highAmountThreshold: 10000,
-  databaseUrl: process.env.DATABASE_URL
+  // SQLite: 不再需要 DATABASE_URL，数据库文件存放在 ./data/finance.db
 };

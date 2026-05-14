@@ -20,16 +20,6 @@ app.use(session({
 // Serve uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ===== 测试端点（诊断部署状态）=====
-app.get('/api/test', (req, res) => {
-  res.json({
-    message: 'Test endpoint working!',
-    timestamp: new Date().toISOString(),
-    commit: '4342189',
-    env: process.env.NODE_ENV || 'development'
-  });
-});
-
 // API routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/transactions', require('./routes/transactions'));
@@ -56,17 +46,14 @@ app.use((err, req, res, next) => {
 });
 
 // Start
-async function start() {
-  await initDatabase();
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log('');
-    console.log('🍽️  餐饮店财务管理系统');
-    console.log(`   访问地址: http://localhost:${PORT}`);
-    console.log('');
-  });
-}
+console.log('📊 正在初始化数据库 (SQLite)...');
+initDatabase();
+console.log('✅ 数据库初始化完成');
 
-start().catch(err => {
-  console.error('启动失败:', err);
-  process.exit(1);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('');
+  console.log('🍽️  餐饮店财务管理系统 (SQLite 版本)');
+  console.log(`   本地访问地址: http://localhost:${PORT}`);
+  console.log(`   Render 部署后自动使用云端地址`);
+  console.log('');
 });
