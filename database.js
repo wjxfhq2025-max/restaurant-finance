@@ -132,6 +132,13 @@ async function createTablesInternal(client) {
       expires_at TIMESTAMP NOT NULL,
       used INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    // connect-pg-simple session 表
+    `CREATE TABLE IF NOT EXISTS "session" (
+      sid VARCHAR NOT NULL COLLATE "default",
+      sess JSON NOT NULL,
+      expire TIMESTAMP(6) NOT NULL,
+      PRIMARY KEY (sid)
     )`
   ];
   
