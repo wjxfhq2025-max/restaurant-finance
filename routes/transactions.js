@@ -47,14 +47,25 @@ const uploadMiddleware = (req, res, next) => {
   });
 };
 
-// 辅助函数：上传到 Cloudinary
+// 辅助函数：上传到 Cloudinary（自动压缩+转WebP）
 const uploadToCloudinary = (fileBuffer) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      { folder: 'restaurant-finance/receipts' },
+      {
+        folder: 'restaurant-finance/receipts',
+        quality: 'auto:good',    // 自动压缩，保证质量
+        format: 'webp',          // 转为WebP格式（比JPEG小30-50%）
+        transformation: [
+          { width: 1920, crop: 'limit' },  // 最大宽度1920px，等比缩放
+          { quality: 'auto:good' }
+        ]
+      },
       (error, result) => {
         if (error) reject(error);
-        else resolve(result.secure_url);
+        else resolve({
+          url: result.secure_url,
+          size: result.bytes  // 压缩后大小
+        });
       }
     );
     stream.end(fileBuffer);
@@ -113,16 +124,19 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
     }
     
     let receiptUrl = null;
+    let compressedSize = null;
     if (req.file) {
-      // 上传到 Cloudinary
-      receiptUrl = await uploadToCloudinary(req.file.buffer);
+      // 上传到 Cloudinary（自动压缩+转WebP）
+      const result = await uploadToCloudinary(req.file.buffer);
+      receiptUrl = result.url;
+      compressedSize = result.size;
     }
     
     await run(
       'INSERT INTO transactions (type, category, amount, description, receipt_path, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
       [type, category, amount, description || '', receiptUrl, req.session.userId]
     );
-    res.json({ id: 0, message: '创建成功', receipt: receiptUrl });
+    res.json({ id: 0, message: '创建成功', receipt: receiptUrl, compressedSize });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
