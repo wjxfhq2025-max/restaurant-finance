@@ -207,4 +207,4 @@ async function initDatabase() {
   throw lastError;
 }
 
-module.exports = { initDatabase, forceSeed, get, all, run, runAndGetId };
+module.exports = { pool, initDatabase, forceSeed, get, all, run, runAndGetId };

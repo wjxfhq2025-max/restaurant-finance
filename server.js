@@ -1,7 +1,8 @@
 const express = require('express');
 const session = require('express-session');
+const pgStore = require('connect-pg-simple')(session);
 const path = require('path');
-const { initDatabase } = require('./database');
+const { pool, initDatabase } = require('./database');
 const config = require('./config');
 
 const app = express();
@@ -11,6 +12,10 @@ const PORT = config.port;
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
+  store: new pgStore({
+    pool,
+    tableName: 'session'
+  }),
   secret: config.sessionSecret,
   resave: false,
   saveUninitialized: false,

@@ -8,12 +8,13 @@
     "seed": "node seed.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "pg": "^8.11.3",
-    "multer": "^1.4.5-lts.1",
     "bcryptjs": "^2.4.3",
-    "uuid": "^9.0.0",
+    "cloudinary": "^1.41.0",
+    "connect-pg-simple": "^10.0.0",
+    "express": "^4.18.2",
     "express-session": "^1.17.3",
-    "cloudinary": "^1.41.0"
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.11.3",
+    "uuid": "^9.0.0"
   }
 }
