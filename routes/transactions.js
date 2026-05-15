@@ -1,31 +1,23 @@
 const express = require('express');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const { get, all, run } = require('../database');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
-const router = express.Router();
+// Cloudinary 配置
+const cloudinary = require('cloudinary').v2;
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log('✅ uploads 目录已创建:', uploadsDir);
-}
-
-// Multer setup for receipt uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`);
-  }
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// File filter: only allow images
+const router = express.Router();
+
+// Multer 使用内存存储（用于 Cloudinary 上传）
+const storage = multer.memoryStorage();
+
+// 文件过滤器：只允许图片
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
@@ -40,7 +32,7 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 });
 
-// Wrap upload middleware with error handling
+// 包装上传中间件，处理错误
 const uploadMiddleware = (req, res, next) => {
   upload.single('receipt')(req, res, (err) => {
     if (err instanceof multer.MulterError) {
@@ -55,7 +47,21 @@ const uploadMiddleware = (req, res, next) => {
   });
 };
 
-// List transactions
+// 辅助函数：上传到 Cloudinary
+const uploadToCloudinary = (fileBuffer) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'restaurant-finance/receipts' },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result.secure_url);
+      }
+    );
+    stream.end(fileBuffer);
+  });
+};
+
+// 列出交易记录
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const { type, category, startDate, endDate, page, limit, search } = req.query;
@@ -69,7 +75,7 @@ router.get('/', authMiddleware, async (req, res) => {
     if (endDate) { sql += ` AND created_at <= $${idx++}`; params.push(endDate); }
     if (search) { sql += ` AND (description LIKE $${idx++} OR category LIKE $${idx++})`; params.push('%' + search + '%', '%' + search + '%'); }
     
-    // Count total
+    // 计算总数
     const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
     const countRow = await get(countSql, params);
     const total = countRow ? countRow.total : 0;
@@ -87,7 +93,7 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// Get single transaction
+// 获取单个交易记录
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const tx = await get('SELECT * FROM transactions WHERE id = $1', [req.params.id]);
@@ -98,7 +104,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Create transaction (with optional receipt upload)
+// 创建交易记录（上传到 Cloudinary）
 router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
   try {
     const { type, category, amount, description } = req.body;
@@ -106,19 +112,23 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
       return res.status(400).json({ error: '缺少必填字段' });
     }
     
-    const receiptPath = req.file ? '/uploads/' + req.file.filename : null;
+    let receiptUrl = null;
+    if (req.file) {
+      // 上传到 Cloudinary
+      receiptUrl = await uploadToCloudinary(req.file.buffer);
+    }
     
     await run(
       'INSERT INTO transactions (type, category, amount, description, receipt_path, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
-      [type, category, amount, description || '', receiptPath, req.session.userId]
+      [type, category, amount, description || '', receiptUrl, req.session.userId]
     );
-    res.json({ id: 0, message: '创建成功', receipt: receiptPath });
+    res.json({ id: 0, message: '创建成功', receipt: receiptUrl });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Update transaction (admin only)
+// 更新交易记录（仅管理员）
 router.put('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -137,7 +147,7 @@ router.put('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
   }
 });
 
-// Delete transaction (admin only)
+// 删除交易记录（仅管理员）
 router.delete('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
