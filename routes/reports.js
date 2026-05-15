@@ -1,25 +1,27 @@
 const express = require('express');
+const archiver = require('archiver');
+const https = require('https');
+const http = require('http');
 const { get, all } = require('../database');
 const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
-// ========== 财务报表 ==========
+// ========== Financial Reports ==========
 
-// 收支汇总报表
+// Summary report
 router.get('/summary', authMiddleware, async (req, res) => {
   try {
     const { startDate, endDate, type } = req.query;
-    
+
     let where = 'WHERE 1=1';
     const params = [];
     let idx = 1;
-    
+
     if (startDate) { where += ` AND created_at >= $${idx++}`; params.push(startDate); }
     if (endDate) { where += ` AND created_at <= $${idx++}`; params.push(endDate + ' 23:59:59'); }
     if (type) { where += ` AND type = $${idx++}`; params.push(type); }
-    
-    // 总体汇总
+
     const summary = await get(`
       SELECT 
         COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as total_income,
@@ -29,8 +31,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
         COUNT(CASE WHEN type='expense' THEN 1 END) as expense_count
       FROM transactions ${where}
     `, params);
-    
-    // 按月统计
+
     const monthly = await all(`
       SELECT 
         TO_CHAR(created_at, 'YYYY-MM') as month,
@@ -42,7 +43,20 @@ router.get('/summary', authMiddleware, async (req, res) => {
       ORDER BY month DESC
       LIMIT 24
     `, params);
-    
+
+    // Daily stats for selected period
+    const daily = await all(`
+      SELECT 
+        TO_CHAR(created_at, 'YYYY-MM-DD') as date,
+        COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense,
+        COUNT(*) as count
+      FROM transactions ${where}
+      GROUP BY TO_CHAR(created_at, 'YYYY-MM-DD')
+      ORDER BY date DESC
+      LIMIT 90
+    `, params);
+
     res.json({
       summary: {
         totalIncome: Number(summary?.total_income || 0),
@@ -52,26 +66,27 @@ router.get('/summary', authMiddleware, async (req, res) => {
         incomeCount: Number(summary?.income_count || 0),
         expenseCount: Number(summary?.expense_count || 0)
       },
-      monthly: monthly || []
+      monthly: monthly || [],
+      daily: daily || []
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 分类统计报表
+// Category report
 router.get('/by-category', authMiddleware, async (req, res) => {
   try {
     const { startDate, endDate, type } = req.query;
-    
+
     let where = 'WHERE 1=1';
     const params = [];
     let idx = 1;
-    
+
     if (startDate) { where += ` AND created_at >= $${idx++}`; params.push(startDate); }
     if (endDate) { where += ` AND created_at <= $${idx++}`; params.push(endDate + ' 23:59:59'); }
     if (type) { where += ` AND type = $${idx++}`; params.push(type); }
-    
+
     const categories = await all(`
       SELECT 
         category,
@@ -85,27 +100,27 @@ router.get('/by-category', authMiddleware, async (req, res) => {
       GROUP BY category, type
       ORDER BY total DESC
     `, params);
-    
+
     res.json({ categories: categories || [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 采购申请报表
+// Purchase request report
 router.get('/requests', authMiddleware, async (req, res) => {
   try {
     const { startDate, endDate, status } = req.query;
-    
+
     let where = 'WHERE 1=1';
     const params = [];
     let idx = 1;
-    
+
     if (startDate) { where += ` AND r.created_at >= $${idx++}`; params.push(startDate); }
     if (endDate) { where += ` AND r.created_at <= $${idx++}`; params.push(endDate + ' 23:59:59'); }
     if (status === 'pending') { where += ` AND r.status LIKE 'pending%'`; }
     else if (status) { where += ` AND r.status = $${idx++}`; params.push(status); }
-    
+
     const requests = await all(`
       SELECT r.*, u.real_name as applicant_name
       FROM purchase_requests r
@@ -114,7 +129,7 @@ router.get('/requests', authMiddleware, async (req, res) => {
       ORDER BY r.created_at DESC
       LIMIT 200
     `, params);
-    
+
     const summary = await get(`
       SELECT 
         COUNT(*) as total,
@@ -125,7 +140,7 @@ router.get('/requests', authMiddleware, async (req, res) => {
         COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved_amount
       FROM purchase_requests r ${where}
     `, params);
-    
+
     res.json({
       requests: requests || [],
       summary: {
@@ -142,23 +157,62 @@ router.get('/requests', authMiddleware, async (req, res) => {
   }
 });
 
-// 导出 CSV
+// Helper: download file from URL
+function downloadFile(url) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http;
+    mod.get(url, { timeout: 15000 }, (response) => {
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        return downloadFile(response.headers.location).then(resolve).catch(reject);
+      }
+      if (response.statusCode !== 200) {
+        return reject(new Error('Download failed: ' + response.statusCode));
+      }
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => resolve(Buffer.concat(chunks)));
+      response.on('error', reject);
+    }).on('error', reject).on('timeout', function() {
+      this.destroy();
+      reject(new Error('Download timeout'));
+    });
+  });
+}
+
+// Helper: generate CSV string
+function generateCSV(headers, rows) {
+  const escape = (val) => {
+    if (val === null || val === undefined) return '';
+    const str = String(val);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+  };
+
+  const lines = [headers.join(',')];
+  for (const row of (rows || [])) {
+    lines.push(headers.map(h => escape(row[h] !== undefined ? row[h] : row[Object.keys(row)[headers.indexOf(h)]] || '')).join(','));
+  }
+  return '\uFEFF' + lines.join('\r\n');
+}
+
+// Export CSV (existing, unchanged)
 router.get('/export', authMiddleware, async (req, res) => {
   try {
     const { reportType, startDate, endDate, type } = req.query;
-    
+
     let where = 'WHERE 1=1';
     const params = [];
     let idx = 1;
-    
+
     if (startDate) { where += ` AND created_at >= $${idx++}`; params.push(startDate); }
     if (endDate) { where += ` AND created_at <= $${idx++}`; params.push(endDate + ' 23:59:59'); }
     if (type) { where += ` AND type = $${idx++}`; params.push(type); }
-    
+
     let rows, filename, headers;
-    
+
     if (reportType === 'requests') {
-      // 采购申请报表
       let reqWhere = where.replace('created_at', 'r.created_at');
       rows = await all(`
         SELECT r.id, r.title, r.amount, r.category, r.status, r.description,
@@ -168,63 +222,124 @@ router.get('/export', authMiddleware, async (req, res) => {
         ${reqWhere}
         ORDER BY r.created_at DESC
       `, params);
-      
       headers = ['ID', '标题', '金额', '分类', '状态', '描述', '申请人', '创建时间', '更新时间'];
       filename = `采购申请报表_${startDate || '全时期'}_${endDate || '至今'}.csv`;
-      
     } else if (reportType === 'category') {
-      // 分类统计报表
       rows = await all(`
-        SELECT category, type, COUNT(*) as count,
-               COALESCE(SUM(amount), 0) as total,
-               COALESCE(AVG(amount), 0) as avg_amount
-        FROM transactions ${where}
-        GROUP BY category, type ORDER BY total DESC
+        SELECT category as "分类", type as "类型", count as "笔数",
+               total as "总金额", avg_amount as "平均金额"
+        FROM (
+          SELECT category, type, COUNT(*) as count,
+                 COALESCE(SUM(amount), 0) as total,
+                 COALESCE(AVG(amount), 0) as avg_amount
+          FROM transactions ${where}
+          GROUP BY category, type
+        ) sub ORDER BY total DESC
       `, params);
-      
       headers = ['分类', '类型', '笔数', '总金额', '平均金额'];
       filename = `分类统计报表_${startDate || '全时期'}_${endDate || '至今'}.csv`;
-      
     } else {
-      // 收支明细报表（默认）
       rows = await all(`
         SELECT t.id, t.type, t.category, t.amount, t.description,
-               u.username as creator, t.created_at
+               u.username as creator, t.receipt_path, t.created_at
         FROM transactions t
         LEFT JOIN users u ON t.created_by = u.id
         ${where}
         ORDER BY t.created_at DESC
         LIMIT 5000
       `, params);
-      
-      headers = ['ID', '类型', '分类', '金额', '描述', '创建人', '创建时间'];
+      headers = ['ID', '类型', '分类', '金额', '描述', '创建人', '票据链接', '创建时间'];
       filename = `收支明细报表_${startDate || '全时期'}_${endDate || '至今'}.csv`;
     }
-    
-    // 生成 CSV
-    const escape = (val) => {
-      if (val === null || val === undefined) return '';
-      const str = String(val);
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return '"' + str.replace(/"/g, '""') + '"';
-      }
-      return str;
-    };
-    
-    const csvLines = [headers.join(',')];
-    for (const row of (rows || [])) {
-      const vals = Object.values(row).map(escape);
-      csvLines.push(vals.join(','));
-    }
-    
-    const csv = '\uFEFF' + csvLines.join('\r\n'); // BOM for Excel UTF-8
-    
+
+    const csv = generateCSV(headers, rows);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
     res.send(csv);
-    
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Export ZIP with attachments
+router.get('/export-zip', authMiddleware, async (req, res) => {
+  try {
+    const { startDate, endDate, type } = req.query;
+
+    let where = 'WHERE 1=1';
+    const params = [];
+    let idx = 1;
+
+    if (startDate) { where += ` AND created_at >= $${idx++}`; params.push(startDate); }
+    if (endDate) { where += ` AND created_at <= $${idx++}`; params.push(endDate + ' 23:59:59'); }
+    if (type) { where += ` AND type = $${idx++}`; params.push(type); }
+
+    // Get transactions with receipts
+    const rows = await all(`
+      SELECT t.id, t.type, t.category, t.amount, t.description,
+             u.username as creator, t.receipt_path, t.created_at
+      FROM transactions t
+      LEFT JOIN users u ON t.created_by = u.id
+      ${where}
+      ORDER BY t.created_at DESC
+      LIMIT 1000
+    `, params);
+
+    const period = `${startDate || '全时期'}_${endDate || '至今'}`;
+    const filename = `财务报表_${period}.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.pipe(res);
+
+    // Generate CSV
+    const headers = ['ID', '类型', '分类', '金额', '描述', '创建人', '票据文件', '创建时间'];
+    const csv = generateCSV(headers, rows);
+    archive.append(csv, { name: '收支明细.csv' });
+
+    // Download and add receipt images
+    const receiptRows = (rows || []).filter(r => r.receipt_path);
+    if (receiptRows.length > 0) {
+      for (const row of receiptRows) {
+        try {
+          const imgBuffer = await downloadFile(row.receipt_path);
+          const ext = row.receipt_path.split('.').pop().split('?')[0] || 'jpg';
+          const safeCategory = (row.category || '其他').replace(/[\/\\:*?"<>|]/g, '_');
+          const imgName = `${row.id}_${safeCategory}_${row.type}.${ext}`;
+          archive.append(imgBuffer, { name: `票据图片/${imgName}` });
+        } catch (err) {
+          console.error(`Failed to download receipt for tx ${row.id}:`, err.message);
+          // Add a placeholder text file
+          archive.append(`票据下载失败: ${row.receipt_path}\n错误: ${err.message}`, {
+            name: `票据图片/${row.id}_下载失败.txt`
+          });
+        }
+      }
+    }
+
+    // Also export purchase requests
+    const reqWhere = where.replace('created_at', 'r.created_at');
+    const reqRows = await all(`
+      SELECT r.id, r.title, r.amount, r.category, r.status, r.description,
+             u.real_name as applicant_name, r.created_at, r.updated_at
+      FROM purchase_requests r
+      JOIN users u ON r.applicant_id = u.id
+      ${reqWhere}
+      ORDER BY r.created_at DESC
+      LIMIT 500
+    `, params);
+    const reqHeaders = ['ID', '标题', '金额', '分类', '状态', '描述', '申请人', '创建时间', '更新时间'];
+    const reqCsv = generateCSV(reqHeaders, reqRows);
+    archive.append(reqCsv, { name: '采购申请.csv' });
+
+    await archive.finalize();
+  } catch (err) {
+    console.error('ZIP export error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 

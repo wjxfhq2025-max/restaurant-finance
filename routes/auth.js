@@ -23,15 +23,19 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: '用户名或密码错误' });
     }
 
+    // Parse roles (comma-separated)
+    const roles = (user.role || '').split(',').map(r => r.trim());
+
     req.session.userId = user.id;
     req.session.username = user.username;
-    req.session.role = user.role;
+    req.session.role = user.role; // Store raw comma-separated string
     req.session.realName = user.real_name;
 
     res.json({
       id: user.id,
       username: user.username,
       role: user.role,
+      roles: roles, // Array of roles for frontend use
       real_name: user.real_name
     });
   } catch (err) {
@@ -50,15 +54,17 @@ router.get('/me', (req, res) => {
   if (!req.session || !req.session.userId) {
     return res.status(401).json({ error: '未登录' });
   }
+  const roles = (req.session.role || '').split(',').map(r => r.trim());
   res.json({
     id: req.session.userId,
     username: req.session.username,
     role: req.session.role,
+    roles: roles,
     real_name: req.session.realName
   });
 });
 
-// ===== 调试接口：查看数据库状态 =====
+// ===== Debug: check database status =====
 router.get('/debug', async (req, res) => {
   try {
     let userCount = 0;
@@ -78,27 +84,19 @@ router.get('/debug', async (req, res) => {
         }
       }
     } catch (e) {
-      return res.json({
-        error: 'Database query failed',
-        message: e.message
-      });
+      return res.json({ error: 'Database query failed', message: e.message });
     }
 
-    res.json({
-      database_url_set: !!process.env.DATABASE_URL,
-      users_table_exists: tableExists,
-      user_count: userCount,
-      users: users
-    });
+    res.json({ database_url_set: !!process.env.DATABASE_URL, users_table_exists: tableExists, user_count: userCount, users });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ===== 调试接口：强制重建数据库并插入默认用户 =====
+// ===== Debug: force rebuild database =====
 router.get('/force-seed', async (req, res) => {
   try {
-    console.log('🔧 收到强制重建数据库请求...');
+    console.log('🔧 Force rebuild database...');
     await forceSeed();
     res.json({
       message: '数据库已强制重建',
@@ -111,7 +109,7 @@ router.get('/force-seed', async (req, res) => {
       ]
     });
   } catch (err) {
-    console.error('❌ 强制重建失败:', err);
+    console.error('❌ Force rebuild failed:', err);
     res.status(500).json({ error: '强制重建失败：' + err.message });
   }
 });

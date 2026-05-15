@@ -35,7 +35,7 @@ const Utils = {
     return icons[category] || '📌';
   },
   
-  // Role display name
+  // Role display name (supports multi-role: comma-separated)
   getRoleName(role) {
     const names = {
       'admin': '管理员',
@@ -44,7 +44,15 @@ const Utils = {
       'finance': '财务',
       'shareholder': '股东'
     };
-    return names[role] || role;
+    if (!role) return '';
+    return role.split(',').map(r => names[r.trim()] || r.trim()).join(' / ');
+  },
+
+  // Check if user has a specific role
+  hasRole(role) {
+    const user = window.__currentUser;
+    if (!user || !user.role) return false;
+    return user.role.split(',').map(r => r.trim()).includes(role);
   },
   
   // Status display

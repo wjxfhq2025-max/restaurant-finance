@@ -1,7 +1,7 @@
 // Reports page with export functionality
 const ReportsPage = {
   currentType: '',
-  
+
   async render(container) {
     Utils.showLoading(container);
     try {
@@ -10,7 +10,7 @@ const ReportsPage = {
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const defaultStart = `${year}-01-01`;
       const defaultEnd = `${year}-${month}-${String(now.getDate()).padStart(2, '0')}`;
-      
+
       this.startDate = defaultStart;
       this.endDate = defaultEnd;
       this.renderContent(container);
@@ -18,7 +18,7 @@ const ReportsPage = {
       container.innerHTML = `<div class="empty-state"><div class="empty-icon">😔</div><p class="empty-text">加载失败: ${err.message}</p></div>`;
     }
   },
-  
+
   renderContent(container) {
     container.innerHTML = `
       <div class="card" style="margin-bottom:16px;">
@@ -34,7 +34,7 @@ const ReportsPage = {
           </select>
           <button class="btn btn-primary" onclick="ReportsPage.loadSummary()" style="padding:8px 16px;">查询</button>
         </div>
-        
+
         <div id="summary-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">
           <div class="stat-card income" style="text-align:center;padding:16px;">
             <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">💰 总收入</div>
@@ -53,61 +53,62 @@ const ReportsPage = {
             <div id="total-count" style="font-size:20px;font-weight:bold;">-</div>
           </div>
         </div>
-        
+
         <div style="margin-bottom:8px;font-size:13px;color:var(--text-muted);">
           月度趋势（近6个月）
         </div>
         <div id="monthly-chart" style="margin-bottom:16px;"></div>
       </div>
-      
+
       <div class="card" style="margin-bottom:16px;">
         <div class="card-title">📂 分类统计</div>
         <div id="category-list" style="margin-bottom:12px;"></div>
         <div id="category-export-bar" style="text-align:right;"></div>
       </div>
-      
+
       <div class="card" style="margin-bottom:16px;">
         <div class="card-title">🧾 采购申请报表</div>
         <div id="requests-summary" style="margin-bottom:12px;"></div>
         <div id="requests-export-bar" style="text-align:right;"></div>
       </div>
-      
+
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:8px;">
-        <button class="btn btn-default" onclick="ReportsPage.exportCSV('transactions')" style="padding:10px 20px;">📥 导出收支明细</button>
+        <button class="btn btn-primary" onclick="ReportsPage.exportZIP()" style="padding:10px 20px;">📦 导出完整报表(含票据)</button>
+        <button class="btn btn-default" onclick="ReportsPage.exportCSV('transactions')" style="padding:10px 20px;">📥 导出收支CSV</button>
         <button class="btn btn-default" onclick="ReportsPage.exportCSV('requests')" style="padding:10px 20px;">📥 导出采购申请</button>
         <button class="btn btn-default" onclick="ReportsPage.exportCSV('category')" style="padding:10px 20px;">📥 导出分类统计</button>
       </div>
     `;
-    
+
     // Bind date change
     container.querySelector('#r-start').addEventListener('change', e => this.startDate = e.target.value);
     container.querySelector('#r-end').addEventListener('change', e => this.endDate = e.target.value);
     container.querySelector('#r-type').addEventListener('change', e => this.currentType = e.target.value);
-    
+
     this.loadSummary();
   },
-  
+
   async loadSummary() {
     try {
       const startDate = document.getElementById('r-start')?.value || this.startDate;
       const endDate = document.getElementById('r-end')?.value || this.endDate;
       const type = document.getElementById('r-type')?.value || '';
-      
+
       const params = new URLSearchParams({ startDate, endDate });
       if (type) params.set('type', type);
-      
+
       const [summaryData, categoryData] = await Promise.all([
         API.request('GET', `/reports/summary?${params.toString()}`).catch(() => ({ summary: {}, monthly: [] })),
         API.request('GET', `/reports/by-category?${params.toString()}`).catch(() => ({ categories: [] }))
       ]);
-      
+
       // Summary cards
       const s = summaryData.summary || {};
       const incomeEl = document.getElementById('total-income');
       const expenseEl = document.getElementById('total-expense');
       const profitEl = document.getElementById('total-profit');
       const countEl = document.getElementById('total-count');
-      
+
       if (incomeEl) incomeEl.textContent = Utils.formatMoney(s.totalIncome || 0);
       if (expenseEl) expenseEl.textContent = Utils.formatMoney(s.totalExpense || 0);
       if (profitEl) {
@@ -116,31 +117,31 @@ const ReportsPage = {
         profitEl.style.color = profit >= 0 ? '#4ade80' : '#f87171';
       }
       if (countEl) countEl.textContent = (s.totalCount || 0) + ' 笔';
-      
+
       // Monthly chart
       this.renderMonthlyChart(summaryData.monthly || []);
-      
+
       // Category list
       this.renderCategoryList(categoryData.categories || [], startDate, endDate);
-      
+
       // Requests summary
       this.loadRequestsSummary(startDate, endDate);
-      
+
     } catch (err) {
       console.error('Load summary error:', err);
     }
   },
-  
+
   renderMonthlyChart(monthly) {
     const el = document.getElementById('monthly-chart');
     if (!el || !monthly.length) {
       if (el) el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px;">暂无数据</div>';
       return;
     }
-    
+
     const last6 = monthly.slice(0, 6).reverse();
     const maxVal = Math.max(...last6.map(m => Math.max(Number(m.income), Number(m.expense))), 1);
-    
+
     const bars = last6.map(m => {
       const incomePct = (Number(m.income) / maxVal * 100).toFixed(1);
       const expensePct = (Number(m.expense) / maxVal * 100).toFixed(1);
@@ -156,27 +157,27 @@ const ReportsPage = {
         </div>
       `;
     }).join('');
-    
+
     el.innerHTML = `<div style="display:flex;align-items:flex-end;gap:8px;overflow-x:auto;padding-bottom:4px;">${bars}</div>
     <div style="display:flex;gap:16px;justify-content:center;margin-top:8px;font-size:11px;">
       <span style="color:#22c55e;">■ 收入</span>
       <span style="color:#ef4444;">■ 支出</span>
     </div>`;
   },
-  
+
   renderCategoryList(categories, startDate, endDate) {
     const el = document.getElementById('category-list');
     const barEl = document.getElementById('category-export-bar');
     if (!el) return;
-    
+
     if (!categories.length) {
       el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:16px;">暂无分类数据</div>';
       barEl.innerHTML = '';
       return;
     }
-    
+
     const maxVal = Math.max(...categories.map(c => Number(c.total)), 1);
-    
+
     el.innerHTML = categories.map(c => {
       const pct = (Number(c.total) / maxVal * 100).toFixed(1);
       const color = c.type === 'income' ? '#22c55e' : '#ef4444';
@@ -192,22 +193,21 @@ const ReportsPage = {
         </div>
       `;
     }).join('');
-    
-    const params = new URLSearchParams({ startDate, endDate, reportType: 'category' });
+
     barEl.innerHTML = `<button class="btn btn-default btn-sm" onclick="ReportsPage.exportCSV('category')" style="padding:6px 16px;">📥 导出此报表</button>`;
   },
-  
+
   async loadRequestsSummary(startDate, endDate) {
     try {
       const params = new URLSearchParams({ startDate, endDate });
       const data = await API.request('GET', `/reports/requests?${params.toString()}`).catch(() => ({ summary: {}, requests: [] }));
-      
+
       const s = data.summary || {};
       const el = document.getElementById('requests-summary');
       const barEl = document.getElementById('requests-export-bar');
-      
+
       if (!el) return;
-      
+
       el.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;">
           <div style="text-align:center;padding:12px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;">
@@ -236,22 +236,27 @@ const ReportsPage = {
           </div>
         </div>
       `;
-      
+
       barEl.innerHTML = `<button class="btn btn-default btn-sm" onclick="ReportsPage.exportCSV('requests')" style="padding:6px 16px;">📥 导出采购申请</button>`;
     } catch (err) {
       console.error('Load requests summary error:', err);
     }
   },
-  
+
   exportCSV(type) {
     const startDate = document.getElementById('r-start')?.value || this.startDate;
     const endDate = document.getElementById('r-end')?.value || this.endDate;
     const typeParam = this.currentType ? `&type=${this.currentType}` : '';
-    
     const baseUrl = `${API.baseUrl}/reports/export?reportType=${type}&startDate=${startDate}&endDate=${endDate}${typeParam}`;
-    
-    // Use cookie-based auth - open the URL in the same browser context
-    // The browser will include cookies automatically
     window.open(baseUrl, '_blank');
+  },
+
+  exportZIP() {
+    const startDate = document.getElementById('r-start')?.value || this.startDate;
+    const endDate = document.getElementById('r-end')?.value || this.endDate;
+    const typeParam = this.currentType ? `&type=${this.currentType}` : '';
+    const url = `${API.baseUrl}/reports/export-zip?startDate=${startDate}&endDate=${endDate}${typeParam}`;
+    Utils.showToast('⏳ 正在打包报表和票据，请稍候...');
+    window.open(url, '_blank');
   }
 };
