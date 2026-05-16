@@ -87,7 +87,16 @@ router.get('/:id', authMiddleware, async (req, res) => {
       [req.params.id]
     );
     if (!row) return res.status(404).json({ error: '申请不存在' });
-    res.json(row);
+    
+    const approvals = await all(
+      `SELECT a.*, u.real_name as approver_name
+       FROM approvals a
+       JOIN users u ON a.approver_id = u.id
+       WHERE a.request_id = $1 ORDER BY a.created_at`,
+      [req.params.id]
+    );
+    
+    res.json({ request: row, approvals: approvals || [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
