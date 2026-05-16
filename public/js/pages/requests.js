@@ -99,7 +99,7 @@ const RequestsPage = {
     const statusEmoji = r.status === 'approved' ? '✅' : r.status === 'rejected' ? '❌' : '⏳';
     
     return `
-      <div class="request-item status-${r.status}" onclick="App.navigate('/requests', 'detail', '${r.id}')">
+      <div class="request-item status-${r.status}" onclick="App.navigate('#/requests/detail/${r.id}')">
         <div class="request-header">
           <div class="request-title">${r.title}</div>
           <span class="request-status ${statusClass}">${statusEmoji} ${statusText}</span>
