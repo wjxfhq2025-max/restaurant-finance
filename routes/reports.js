@@ -1,5 +1,4 @@
 const express = require('express');
-const archiver = require('archiver');
 const https = require('https');
 const http = require('http');
 const { get, all } = require('../database');
@@ -44,7 +43,6 @@ router.get('/summary', authMiddleware, async (req, res) => {
       LIMIT 24
     `, params);
 
-    // Daily stats for selected period
     const daily = await all(`
       SELECT 
         TO_CHAR(created_at, 'YYYY-MM-DD') as date,
@@ -157,8 +155,8 @@ router.get('/requests', authMiddleware, async (req, res) => {
   }
 });
 
-// Helper: download file from URL (with size limit for Render free tier stability)
-const MAX_DOWNLOAD_SIZE = 5 * 1024 * 1024; // 5MB per image
+// Helper: download file from URL
+const MAX_DOWNLOAD_SIZE = 5 * 1024 * 1024;
 function downloadFile(url) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
@@ -175,7 +173,7 @@ function downloadFile(url) {
         totalSize += chunk.length;
         if (totalSize > MAX_DOWNLOAD_SIZE) {
           req.destroy();
-          return reject(new Error(`Image too large: ${Math.round(totalSize/1024)}KB > 5MB limit`));
+          return reject(new Error('Image too large'));
         }
         chunks.push(chunk);
       });
@@ -183,10 +181,7 @@ function downloadFile(url) {
       response.on('error', reject);
     });
     req.on('error', reject);
-    req.on('timeout', function() {
-      this.destroy();
-      reject(new Error('Download timeout (10s)'));
-    });
+    req.on('timeout', function() { this.destroy(); reject(new Error('Download timeout')); });
   });
 }
 
@@ -200,7 +195,6 @@ function generateCSV(headers, rows) {
     }
     return str;
   };
-
   const lines = [headers.join(',')];
   for (const row of (rows || [])) {
     lines.push(headers.map(h => escape(row[h] !== undefined ? row[h] : row[Object.keys(row)[headers.indexOf(h)]] || '')).join(','));
@@ -208,7 +202,7 @@ function generateCSV(headers, rows) {
   return '\uFEFF' + lines.join('\r\n');
 }
 
-// Export CSV (existing, unchanged)
+// Export CSV
 router.get('/export', authMiddleware, async (req, res) => {
   try {
     const { reportType, startDate, endDate, type } = req.query;
@@ -238,6 +232,7 @@ router.get('/export', authMiddleware, async (req, res) => {
         ${reqWhere}
         ORDER BY r.created_at DESC
       `, reqParams);
+      headers = ['ID', '标题', '金额', '分类', '状态', '描述', '申请人', '创建时间', '更新时间'];
       filename = `采购申请报表_${startDate || '全时期'}_${endDate || '至今'}.csv`;
     } else if (reportType === 'category') {
       const catParams = [...params];
@@ -288,11 +283,10 @@ router.get('/export', authMiddleware, async (req, res) => {
   }
 });
 
-// Export ZIP with attachments (wrapped in error boundary)
-router.get('/export-zip', authMiddleware, async (req, res) => {
-  // Set a timeout for the entire request
-  req.setTimeout(120000); // 2min total
-  
+// Export single HTML report with inline receipt images (base64 embedded)
+router.get('/export-report', authMiddleware, async (req, res) => {
+  req.setTimeout(180000);
+
   try {
     const { startDate, endDate, type } = req.query;
 
@@ -304,7 +298,7 @@ router.get('/export-zip', authMiddleware, async (req, res) => {
     if (endDate) { where += ` AND created_at <= $${idx++}`; params.push(endDate + ' 23:59:59'); }
     if (type) { where += ` AND type = $${idx++}`; params.push(type); }
 
-    // Get transactions with receipts
+    // Get transactions
     const txParams = [...params];
     let txIdx = 1;
     let txWhere = 'WHERE 1=1';
@@ -314,57 +308,15 @@ router.get('/export-zip', authMiddleware, async (req, res) => {
 
     const rows = await all(`
       SELECT t.id, t.type, t.category, t.amount, t.description,
-             u.username as creator, t.receipt_path, t.created_at
+             u.real_name as creator, t.receipt_path, t.created_at
       FROM transactions t
       LEFT JOIN users u ON t.created_by = u.id
       ${txWhere}
       ORDER BY t.created_at DESC
-      LIMIT 1000
+      LIMIT 500
     `, txParams);
 
-    const period = `${startDate || '全时期'}_${endDate || '至今'}`;
-    const filename = `财务报表_${period}.zip`;
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
-
-    const archive = new archiver.ZipArchive(null, { zlib: { level: 5 } });
-    archive.pipe(res);
-
-    // Generate CSV
-    const headers = ['ID', '类型', '分类', '金额', '描述', '创建人', '票据文件', '创建时间'];
-    const csv = generateCSV(headers, rows);
-    archive.append(csv, { name: '收支明细.csv' });
-
-    // Download and add receipt images (sequential, capped for Render free tier)
-    const receiptRows = (rows || []).filter(r => r.receipt_path);
-    if (receiptRows.length > 0) {
-      const maxImages = Math.min(receiptRows.length, 20);
-      for (let i = 0; i < maxImages; i++) {
-        const row = receiptRows[i];
-        try {
-          const imgBuffer = await downloadFile(row.receipt_path);
-          const ext = row.receipt_path.split('.').pop().split('?')[0] || 'jpg';
-          const safeCategory = (row.category || '其他').replace(/[\/\\:*?"<>|]/g, '_');
-          const imgName = `${row.id}_${safeCategory}_${row.type}.${ext}`;
-          archive.append(imgBuffer, { name: `票据图片/${imgName}` });
-        } catch (err) {
-          console.error(`Failed to download receipt for tx ${row.id}:`, err.message);
-          archive.append(`票据下载失败: ${row.receipt_path}\n错误: ${err.message}`, {
-            name: `票据图片/${row.id}_下载失败.txt`
-          });
-        }
-        // Small delay between downloads to reduce memory pressure
-        if (i < maxImages - 1) await new Promise(r => setTimeout(r, 200));
-      }
-      if (receiptRows.length > 20) {
-        archive.append(`注意：共${receiptRows.length}张票据，本次仅导出前20张（Render免费版内存限制）\n如需全部票据，请分时段导出。`, {
-          name: `票据图片/_说明.txt`
-        });
-      }
-    }
-
-    // Also export purchase requests
+    // Get purchase requests
     const reqParams2 = [...params];
     let reqIdx2 = 1;
     let reqWhere2 = 'WHERE 1=1';
@@ -379,13 +331,116 @@ router.get('/export-zip', authMiddleware, async (req, res) => {
       ORDER BY r.created_at DESC
       LIMIT 500
     `, reqParams2);
-    const reqHeaders = ['ID', '标题', '金额', '分类', '状态', '描述', '申请人', '创建时间', '更新时间'];
-    const reqCsv = generateCSV(reqHeaders, reqRows);
-    archive.append(reqCsv, { name: '采购申请.csv' });
 
-    await archive.finalize();
+    // Download receipt images as base64
+    const receiptRows = (rows || []).filter(r => r.receipt_path);
+    const maxImages = Math.min(receiptRows.length, 30);
+    for (let i = 0; i < maxImages; i++) {
+      const row = receiptRows[i];
+      try {
+        const imgBuffer = await downloadFile(row.receipt_path);
+        const ext = (row.receipt_path.split('.').pop().split('?')[0] || 'jpg').toLowerCase();
+        const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+        row._receiptBase64 = `data:${mime};base64,${imgBuffer.toString('base64')}`;
+      } catch (err) {
+        console.error(`Receipt download failed for tx ${row.id}:`, err.message);
+        row._receiptBase64 = null;
+      }
+      if (i < maxImages - 1) await new Promise(r => setTimeout(r, 150));
+    }
+
+    // Summary
+    const totalIncome = rows.filter(r => r.type === 'income').reduce((s, r) => s + Number(r.amount || 0), 0);
+    const totalExpense = rows.filter(r => r.type === 'expense').reduce((s, r) => s + Number(r.amount || 0), 0);
+    const fmt = (n) => n.toLocaleString('zh-CN', { minimumFractionDigits: 2 });
+
+    // Build HTML
+    let html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>财务报表 ${startDate || ''} ~ ${endDate || ''}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Microsoft YaHei",sans-serif;padding:24px;color:#333;background:#f5f5f5}
+  .hdr{text-align:center;margin-bottom:24px;background:#fff;padding:20px;border-radius:8px}
+  .hdr h1{font-size:22px;margin-bottom:8px}
+  .hdr .period{color:#888;font-size:14px}
+  .summary{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+  .s-card{flex:1;min-width:150px;background:#fff;padding:16px;border-radius:8px;text-align:center}
+  .s-card .lb{font-size:13px;color:#888;margin-bottom:4px}
+  .s-card .vl{font-size:24px;font-weight:bold}
+  .inc{color:#52c41a}.exp{color:#ff4d4f}.pft{color:#1890ff}
+  .stitle{font-size:16px;font-weight:bold;margin:20px 0 12px;padding-left:8px;border-left:4px solid #1890ff}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;margin-bottom:24px}
+  th{background:#fafafa;padding:10px 12px;text-align:left;font-size:13px;color:#666;border-bottom:2px solid #e8e8e8}
+  td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:top}
+  tr:hover{background:#fafafa}
+  .t-inc{color:#52c41a}.t-exp{color:#ff4d4f}
+  .amt{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums}
+  .rcpt img{max-width:80px;max-height:80px;border-radius:4px;cursor:pointer;border:1px solid #e8e8e8;transition:all .2s}
+  .rcpt img:hover{max-width:400px;max-height:400px;box-shadow:0 4px 16px rgba(0,0,0,.15)}
+  .st-pending{color:#faad14}.st-approved{color:#52c41a}.st-rejected{color:#ff4d4f}
+  .ft{text-align:center;color:#aaa;font-size:12px;margin-top:24px}
+  .warn{color:#faad14;font-size:13px;margin-bottom:12px}
+  @media print{body{background:#fff;padding:12px}.rcpt img{max-width:60px;max-height:60px}}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <h1>📊 餐厅财务报表</h1>
+  <div class="period">${startDate || '起始'} ~ ${endDate || '至今'} · 共 ${rows.length} 条收支记录</div>
+</div>
+<div class="summary">
+  <div class="s-card"><div class="lb">总收入</div><div class="vl inc">¥${fmt(totalIncome)}</div></div>
+  <div class="s-card"><div class="lb">总支出</div><div class="vl exp">¥${fmt(totalExpense)}</div></div>
+  <div class="s-card"><div class="lb">净利润</div><div class="vl pft">¥${fmt(totalIncome - totalExpense)}</div></div>
+</div>
+<div class="stitle">收支明细</div>
+<table>
+<thead><tr><th>#</th><th>日期</th><th>类型</th><th>分类</th><th>金额</th><th>描述</th><th>记录人</th><th>票据</th></tr></thead>
+<tbody>`;
+
+    rows.forEach((r, i) => {
+      const ds = r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-';
+      const tc = r.type === 'income' ? 't-inc' : 't-exp';
+      const tl = r.type === 'income' ? '收入' : '支出';
+      const sign = r.type === 'income' ? '+' : '-';
+      let rcpt = '<span style="color:#ccc">无</span>';
+      if (r._receiptBase64) {
+        rcpt = `<img src="${r._receiptBase64}" alt="票据" title="悬停放大">`;
+      } else if (r.receipt_path) {
+        rcpt = '<span style="color:#ff4d4f;font-size:12px">加载失败</span>';
+      }
+      html += `<tr><td>${i + 1}</td><td>${ds}</td><td class="${tc}">${tl}</td><td>${r.category || '-'}</td><td class="amt">${sign}¥${fmt(Number(r.amount || 0))}</td><td>${(r.description || '-').replace(/</g, '&lt;')}</td><td>${r.creator || '-'}</td><td class="rcpt">${rcpt}</td></tr>`;
+    });
+
+    html += `</tbody></table>
+<div class="stitle">采购申请</div>
+<table>
+<thead><tr><th>#</th><th>日期</th><th>标题</th><th>金额</th><th>分类</th><th>状态</th><th>申请人</th><th>描述</th></tr></thead>
+<tbody>`;
+
+    const statusMap = { pending_supervisor: '待主管审批', pending_finance: '待财务审批', pending_shareholder: '待股东审批', approved: '已通过', rejected: '已驳回' };
+    reqRows.forEach((r, i) => {
+      const ds = r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-';
+      const sl = statusMap[r.status] || r.status;
+      const sc = r.status.includes('pending') ? 'st-pending' : r.status === 'approved' ? 'st-approved' : 'st-rejected';
+      html += `<tr><td>${i + 1}</td><td>${ds}</td><td>${r.title || '-'}</td><td class="amt">¥${fmt(Number(r.amount || 0))}</td><td>${r.category || '-'}</td><td class="${sc}">${sl}</td><td>${r.applicant_name || '-'}</td><td>${(r.description || '-').replace(/</g, '&lt;')}</td></tr>`;
+    });
+
+    html += `</tbody></table>`;
+    if (receiptRows.length > maxImages) {
+      html += `<div class="warn">⚠️ 共 ${receiptRows.length} 张票据，本次仅嵌入前 ${maxImages} 张，如需全部请缩小日期范围分批导出。</div>`;
+    }
+    html += `<div class="ft">导出时间: ${new Date().toLocaleString('zh-CN')} · 餐厅财务管理系统</div>\n</body></html>`;
+
+    const filename = `财务报表_${startDate || '全部'}_${endDate || '至今'}.html`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.send(html);
   } catch (err) {
-    console.error('ZIP export error:', err);
+    console.error('HTML report export error:', err);
     if (!res.headersSent) {
       res.status(500).json({ error: err.message });
     }

@@ -107,7 +107,7 @@ const ReportsPage = {
 
       <!-- 导出按钮区 -->
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:8px;margin-bottom:20px;">
-        <button class="btn btn-primary" onclick="ReportsPage.exportZIP()" style="padding:10px 18px;">📦 导出完整报表(含票据)</button>
+        <button class="btn btn-primary" onclick="ReportsPage.exportReport()" style="padding:10px 18px;">📄 导出完整报表(含票据)</button>
         <button class="btn btn-default" onclick="ReportsPage.exportCSV('transactions')" style="padding:10px 18px;">📥 导出收支CSV</button>
         <button class="btn btn-default" onclick="ReportsPage.exportCSV('requests')" style="padding:10px 18px;">📥 导出采购申请</button>
         <button class="btn btn-default" onclick="ReportsPage.exportCSV('category')" style="padding:10px 18px;">📥 导出分类统计</button>
@@ -566,12 +566,12 @@ const ReportsPage = {
     window.open(baseUrl, '_blank');
   },
 
-  exportZIP() {
+  exportReport() {
     const startDate = document.getElementById('r-start')?.value || this.startDate;
     const endDate = document.getElementById('r-end')?.value || this.endDate;
     const typeParam = this.currentType ? `&type=${this.currentType}` : '';
-    const url = `${API.baseUrl}/reports/export-zip?startDate=${startDate}&endDate=${endDate}${typeParam}`;
-    Utils.showToast('⏳ 正在打包报表和票据，请稍候...');
+    const url = `${API.baseUrl}/reports/export-report?startDate=${startDate}&endDate=${endDate}${typeParam}`;
+    Utils.showToast('⏳ 正在生成报表，请稍候...');
     window.open(url, '_blank');
   }
 };
