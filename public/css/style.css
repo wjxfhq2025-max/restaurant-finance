@@ -1101,6 +1101,8 @@ img { max-width: 100%; display: block; }
 }
 
 /* ===== Responsive ===== */
+
+/* Tablet */
 @media (min-width: 768px) {
   .app-main {
     padding: 20px;
@@ -1112,6 +1114,179 @@ img { max-width: 100%; display: block; }
   
   .quick-actions {
     grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Desktop: switch to sidebar layout */
+@media (min-width: 1024px) {
+  :root {
+    --font-size-base: 15px;
+    --font-size-sm: 13px;
+    --font-size-lg: 18px;
+    --font-size-xl: 22px;
+    --font-size-xxl: 28px;
+    --sidebar-width: 220px;
+  }
+
+  body {
+    padding-bottom: 0;
+  }
+
+  /* Header: no longer full-width fixed, sits above sidebar */
+  .app-header {
+    position: fixed;
+    top: 0;
+    left: var(--sidebar-width);
+    right: 0;
+    height: 56px;
+    z-index: 99;
+    padding: 0 32px;
+  }
+
+  .app-header h1 {
+    font-size: 17px;
+  }
+
+  /* Sidebar replaces bottom nav */
+  .bottom-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: var(--sidebar-width);
+    flex-direction: column;
+    align-items: stretch;
+    height: 100vh;
+    padding-bottom: 0;
+    border-top: none;
+    border-right: 1px solid var(--border);
+    background: var(--card-bg);
+    box-shadow: 2px 0 12px rgba(0,0,0,0.05);
+    z-index: 100;
+    gap: 0;
+  }
+
+  .nav-item {
+    flex-direction: row;
+    padding: 14px 20px;
+    gap: 12px;
+    border-radius: 0;
+    justify-content: flex-start;
+  }
+
+  .nav-item.active {
+    background: var(--primary);
+    color: white;
+  }
+
+  .nav-item:not(.active):hover {
+    background: #F5F5F5;
+  }
+
+  .nav-icon {
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .nav-label {
+    font-size: var(--font-size-base);
+    margin-top: 0;
+    font-weight: 400;
+  }
+
+  .nav-item.active .nav-label {
+    font-weight: 600;
+  }
+
+  /* Main content: offset by sidebar */
+  .app-main {
+    max-width: 960px;
+    margin-left: var(--sidebar-width);
+    margin-right: auto;
+    padding: 24px 32px;
+    min-height: 100vh;
+  }
+
+  /* Cards: slightly larger padding */
+  .card {
+    padding: 20px;
+  }
+
+  /* Login page: wider */
+  .login-page {
+    margin-left: var(--sidebar-width);
+  }
+  .login-form {
+    max-width: 440px;
+  }
+
+  /* Modal: wider */
+  .modal-box {
+    max-width: 520px;
+  }
+
+  /* Approve page: wider */
+  .approve-page {
+    max-width: 600px;
+  }
+
+  /* Image preview: larger */
+  .image-preview-container {
+    max-width: 700px;
+  }
+
+  /* Transaction list items: hover effect instead of active */
+  .tx-item {
+    transition: box-shadow 0.2s, transform 0.1s;
+  }
+  .tx-item:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-1px);
+  }
+  .tx-item:active {
+    transform: none;
+  }
+
+  /* Quick action hover */
+  .quick-action:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+  }
+  .quick-action:active {
+    transform: none;
+  }
+
+  /* Menu items hover */
+  .menu-item:hover {
+    background: #F5F5F5;
+  }
+  .menu-item:active {
+    background: #F5F5F5;
+  }
+
+  /* Buttons hover */
+  .btn:hover {
+    filter: brightness(1.05);
+  }
+
+  /* Upload area hover */
+  .upload-area:hover {
+    border-color: var(--primary);
+    background: #F8F8F8;
+  }
+  .upload-area:active {
+    background: #F0F0F0;
+  }
+}
+
+/* Large desktop */
+@media (min-width: 1400px) {
+  :root {
+    --sidebar-width: 240px;
+  }
+
+  .app-main {
+    max-width: 1080px;
   }
 }
 
