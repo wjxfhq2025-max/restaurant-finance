@@ -1225,5 +1225,6 @@ img { max-width: 100%; display: block; }
   cursor: pointer;
   transition: background 0.15s;
   white-space: nowrap;
+  color: var(--text-primary);
 }
 .user-switch-item:hover { background: var(--bg); }
