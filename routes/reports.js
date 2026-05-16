@@ -157,11 +157,13 @@ router.get('/requests', authMiddleware, async (req, res) => {
   }
 });
 
-// Helper: download file from URL
+// Helper: download file from URL (with size limit for Render free tier stability)
+const MAX_DOWNLOAD_SIZE = 5 * 1024 * 1024; // 5MB per image
 function downloadFile(url) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
-    mod.get(url, { timeout: 15000 }, (response) => {
+    let totalSize = 0;
+    const req = mod.get(url, { timeout: 10000 }, (response) => {
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         return downloadFile(response.headers.location).then(resolve).catch(reject);
       }
@@ -169,12 +171,21 @@ function downloadFile(url) {
         return reject(new Error('Download failed: ' + response.statusCode));
       }
       const chunks = [];
-      response.on('data', chunk => chunks.push(chunk));
+      response.on('data', chunk => {
+        totalSize += chunk.length;
+        if (totalSize > MAX_DOWNLOAD_SIZE) {
+          req.destroy();
+          return reject(new Error(`Image too large: ${Math.round(totalSize/1024)}KB > 5MB limit`));
+        }
+        chunks.push(chunk);
+      });
       response.on('end', () => resolve(Buffer.concat(chunks)));
       response.on('error', reject);
-    }).on('error', reject).on('timeout', function() {
+    });
+    req.on('error', reject);
+    req.on('timeout', function() {
       this.destroy();
-      reject(new Error('Download timeout'));
+      reject(new Error('Download timeout (10s)'));
     });
   });
 }
@@ -277,8 +288,11 @@ router.get('/export', authMiddleware, async (req, res) => {
   }
 });
 
-// Export ZIP with attachments
+// Export ZIP with attachments (wrapped in error boundary)
 router.get('/export-zip', authMiddleware, async (req, res) => {
+  // Set a timeout for the entire request
+  req.setTimeout(120000); // 2min total
+  
   try {
     const { startDate, endDate, type } = req.query;
 
@@ -322,10 +336,12 @@ router.get('/export-zip', authMiddleware, async (req, res) => {
     const csv = generateCSV(headers, rows);
     archive.append(csv, { name: '收支明细.csv' });
 
-    // Download and add receipt images
+    // Download and add receipt images (sequential, capped for Render free tier)
     const receiptRows = (rows || []).filter(r => r.receipt_path);
     if (receiptRows.length > 0) {
-      for (const row of receiptRows) {
+      const maxImages = Math.min(receiptRows.length, 20);
+      for (let i = 0; i < maxImages; i++) {
+        const row = receiptRows[i];
         try {
           const imgBuffer = await downloadFile(row.receipt_path);
           const ext = row.receipt_path.split('.').pop().split('?')[0] || 'jpg';
@@ -334,11 +350,17 @@ router.get('/export-zip', authMiddleware, async (req, res) => {
           archive.append(imgBuffer, { name: `票据图片/${imgName}` });
         } catch (err) {
           console.error(`Failed to download receipt for tx ${row.id}:`, err.message);
-          // Add a placeholder text file
           archive.append(`票据下载失败: ${row.receipt_path}\n错误: ${err.message}`, {
             name: `票据图片/${row.id}_下载失败.txt`
           });
         }
+        // Small delay between downloads to reduce memory pressure
+        if (i < maxImages - 1) await new Promise(r => setTimeout(r, 200));
+      }
+      if (receiptRows.length > 20) {
+        archive.append(`注意：共${receiptRows.length}张票据，本次仅导出前20张（Render免费版内存限制）\n如需全部票据，请分时段导出。`, {
+          name: `票据图片/_说明.txt`
+        });
       }
     }
 
