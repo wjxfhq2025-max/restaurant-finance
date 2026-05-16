@@ -19,14 +19,14 @@ router.get('/storage', authMiddleware, async (req, res) => {
     // Cache for 10 minutes
     res.setHeader('Cache-Control', 'public, max-age=600');
     
-    const result = await cloudinary.api.usage({ usage_type: 'storage' });
+    const result = await cloudinary.api.usage();
     const storage = result?.storage;
     const usedBytes = (storage?.used ?? 0) * 1024 * 1024;
     const limitBytes = (storage?.limit ?? 1024) * 1024 * 1024;
     const usagePercent = limitBytes > 0 ? Math.round((usedBytes / limitBytes) * 100) : 0;
-    
-    // Also get image count
-    const images = await cloudinary.api.resources({ type: 'upload', max_results: 500, prefix: 'receipts/' });
+
+    // Get image count (folder matches uploadToCloudinary folder)
+    const images = await cloudinary.api.resources({ type: 'upload', max_results: 500, prefix: 'restaurant-finance/' });
     const imageCount = images?.resources?.length || 0;
 
     res.json({
