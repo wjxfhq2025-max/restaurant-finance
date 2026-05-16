@@ -1,29 +1,72 @@
 const express = require('express');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const { get, all, run } = require('../database');
 const { authMiddleware } = require('../middleware/auth');
 
-// 确保 uploads 目录存在（Render 文件系统是临时的）
-const uploadsDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Cloudinary 配置（用于附件持久化存储）
+const cloudinary = require('cloudinary').v2;
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 const router = express.Router();
 
-// Multer setup for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '..', 'uploads'));
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`);
+// Multer 使用内存存储（用于 Cloudinary 上传）
+const storage = multer.memoryStorage();
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('只支持上传图片文件'), false);
   }
+};
+const upload = multer({ 
+  storage, 
+  fileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// 包装上传中间件，处理错误
+const uploadMiddleware = (req, res, next) => {
+  upload.single('attachment')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: '图片文件过大，请选择小于 10MB 的图片' });
+      }
+      return res.status(400).json({ error: '文件上传失败: ' + err.message });
+    } else if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+};
+
+// 辅助函数：上传到 Cloudinary
+const uploadToCloudinary = (fileBuffer) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'restaurant-finance/requests',
+        quality: 'auto:good',
+        format: 'webp',
+        transformation: [
+          { width: 1920, crop: 'limit' },
+          { quality: 'auto:good' }
+        ]
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve({
+          url: result.secure_url,
+          publicId: result.public_id
+        });
+      }
+    );
+    stream.end(fileBuffer);
+  });
+};
 
 // List purchase requests
 router.get('/', authMiddleware, async (req, res) => {
@@ -110,14 +153,18 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 // Create purchase request (with optional file upload)
-router.post('/', authMiddleware, upload.single('attachment'), async (req, res) => {
+router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
   try {
     const { title, amount, category, description } = req.body;
     if (!title || !amount || !category) {
       return res.status(400).json({ error: '缺少必填字段' });
     }
     
-    const attachmentPath = req.file ? '/uploads/' + req.file.filename : null;
+    let attachmentPath = null;
+    if (req.file) {
+      const uploadResult = await uploadToCloudinary(req.file.buffer);
+      attachmentPath = uploadResult.url;
+    }
     
     const result = await run(
       `INSERT INTO purchase_requests (title, amount, category, description, attachment_path, applicant_id, status) 
