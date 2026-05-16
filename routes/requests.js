@@ -1,8 +1,15 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const { get, all, run } = require('../database');
 const { authMiddleware } = require('../middleware/auth');
+
+// 确保 uploads 目录存在（Render 文件系统是临时的）
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 const router = express.Router();
 
