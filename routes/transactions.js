@@ -84,6 +84,7 @@ router.get('/', authMiddleware, async (req, res) => {
     if (category) { sql += ` AND category = $${idx++}`; params.push(category); }
     if (startDate) { sql += ` AND created_at >= $${idx++}`; params.push(startDate + ' 00:00:00'); }
     if (endDate) { sql += ` AND created_at <= $${idx++}`; params.push(endDate + ' 23:59:59'); }
+    if (category) { sql += ` AND category = $${idx++}`; params.push(category); }
     if (search) { sql += ` AND (description LIKE $${idx++} OR category LIKE $${idx++})`; params.push('%' + search + '%', '%' + search + '%'); }
     
     // 计算总数
