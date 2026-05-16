@@ -178,14 +178,7 @@ const TransactionsPage = {
       const isAdmin = this._isAdmin();
 
       for (const tx of data.list) {
-        const actions = isAdmin ? `
-          <div style="display:flex;gap:4px;margin-top:4px;" onclick="event.stopPropagation()">
-            <button class="btn btn-default btn-sm" style="padding:3px 8px;font-size:11px;" onclick="TransactionsPage.openEditModal(${tx.id})">✏️</button>
-            <button class="btn btn-danger btn-sm" style="padding:3px 8px;font-size:11px;" onclick="TransactionsPage.deleteTx(${tx.id}, '${tx.category}')">🗑️</button>
-          </div>
-        ` : '';
-
-        const item = Utils.el('div', { className: 'tx-item', onclick: () => App.navigate('/transactions/detail/' + tx.id) }, [
+        const children = [
           Utils.el('div', { className: `tx-icon ${tx.type}` }, [Utils.getCategoryIcon(tx.category)]),
           Utils.el('div', { className: 'tx-info' }, [
             Utils.el('div', { className: 'tx-category' }, [tx.category + (tx.source === 'purchase_request' ? ' (采购)' : '')]),
@@ -194,10 +187,31 @@ const TransactionsPage = {
           Utils.el('div', { className: 'tx-right' }, [
             Utils.el('div', { className: `tx-amount ${tx.type}` }, [(tx.type === 'income' ? '+' : '-') + Utils.formatMoney(tx.amount)]),
             Utils.el('div', { className: 'tx-date' }, [Utils.formatDate(tx.created_at)]),
-            ...(tx.receipt_path ? [Utils.el('div', { className: 'tx-attachment' }, ['📎'])] : []),
-            Utils.el('div', {}, [actions])
+            ...(tx.receipt_path ? [Utils.el('div', { className: 'tx-attachment' }, ['📎'])] : [])
           ])
-        ]);
+        ];
+
+        if (isAdmin) {
+          children.push(
+            Utils.el('div', {
+              style: 'display:flex;gap:4px;margin-top:4px;',
+              onclick: (e) => e.stopPropagation()
+            }, [
+              Utils.el('button', {
+                className: 'btn btn-default btn-sm',
+                style: 'padding:3px 8px;font-size:11px;',
+                onclick: () => TransactionsPage.openEditModal(tx.id)
+              }, ['✏️']),
+              Utils.el('button', {
+                className: 'btn btn-danger btn-sm',
+                style: 'padding:3px 8px;font-size:11px;',
+                onclick: () => TransactionsPage.deleteTx(tx.id, tx.category)
+              }, ['🗑️'])
+            ])
+          );
+        }
+
+        const item = Utils.el('div', { className: 'tx-item', onclick: () => App.navigate('/transactions/detail/' + tx.id) }, children);
         listEl.appendChild(item);
       }
 
