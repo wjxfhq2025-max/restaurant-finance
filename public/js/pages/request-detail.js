@@ -141,7 +141,7 @@ const RequestDetailPage = {
             ${statusEmoji} ${statusText}
           </span>
         </div>
-        <div class="request-amount">¥${Number(request.amount).toLocaleString('zh-CN', {minimumFractionDigits:2})}</div>
+        <div class="request-amount">$${Number(request.amount).toLocaleString('zh-CN', {minimumFractionDigits:2})}</div>
         <div class="request-meta">分类: ${request.category} | 申请人: ${request.applicant_name || '-'} | ${Utils.formatDate(request.created_at)}</div>
       </div>
       

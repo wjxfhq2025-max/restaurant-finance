@@ -611,7 +611,7 @@ const ReportsPage = {
             </div>
             <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);">
               <span>${r.applicant_name || '-'} · ${Utils.formatDate(r.created_at)}</span>
-              <span style="font-weight:600;">¥${Number(r.amount || 0).toFixed(2)}</span>
+              <span style="font-weight:600;">$${Number(r.amount || 0).toFixed(2)}</span>
             </div>
           </div>
         `;

@@ -2,7 +2,7 @@
 const Utils = {
   // Format amount
   formatMoney(amount) {
-    return '¥' + Number(amount).toLocaleString('zh-CN', { 
+    return '$' + Number(amount).toLocaleString('zh-CN', { 
       minimumFractionDigits: 2, 
       maximumFractionDigits: 2 
     });

@@ -104,7 +104,7 @@ const RequestsPage = {
           <div class="request-title">${r.title}</div>
           <span class="request-status ${statusClass}">${statusEmoji} ${statusText}</span>
         </div>
-        <div class="request-amount">¥${Number(r.amount).toLocaleString('zh-CN', {minimumFractionDigits:2})}</div>
+        <div class="request-amount">$${Number(r.amount).toLocaleString('zh-CN', {minimumFractionDigits:2})}</div>
         <div class="request-meta">申请人: ${r.applicant_name || '-'} | ${Utils.formatDate(r.created_at)}</div>
       </div>
     `;
