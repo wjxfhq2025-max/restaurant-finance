@@ -328,7 +328,7 @@ router.get('/export-zip', authMiddleware, async (req, res) => {
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
 
-    const archive = archiver('zip', { zlib: { level: 5 } });
+    const archive = new archiver.ZipArchive(null, { zlib: { level: 5 } });
     archive.pipe(res);
 
     // Generate CSV
