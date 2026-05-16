@@ -213,7 +213,12 @@ router.get('/export', authMiddleware, async (req, res) => {
     let rows, filename, headers;
 
     if (reportType === 'requests') {
-      let reqWhere = where.replace('created_at', 'r.created_at');
+      const reqParams = [...params];
+      let reqIdx = 1;
+      let reqWhere = 'WHERE 1=1';
+      if (startDate) { reqWhere += ` AND r.created_at >= $${reqIdx++}`; }
+      if (endDate) { reqWhere += ` AND r.created_at <= $${reqIdx++}`; }
+      if (type) { reqWhere += ` AND r.type = $${reqIdx++}`; }
       rows = await all(`
         SELECT r.id, r.title, r.amount, r.category, r.status, r.description,
                u.real_name as applicant_name, r.created_at, r.updated_at
@@ -221,10 +226,15 @@ router.get('/export', authMiddleware, async (req, res) => {
         JOIN users u ON r.applicant_id = u.id
         ${reqWhere}
         ORDER BY r.created_at DESC
-      `, params);
-      headers = ['ID', '标题', '金额', '分类', '状态', '描述', '申请人', '创建时间', '更新时间'];
+      `, reqParams);
       filename = `采购申请报表_${startDate || '全时期'}_${endDate || '至今'}.csv`;
     } else if (reportType === 'category') {
+      const catParams = [...params];
+      let catIdx = 1;
+      let catWhere = 'WHERE 1=1';
+      if (startDate) { catWhere += ` AND created_at >= $${catIdx++}`; }
+      if (endDate) { catWhere += ` AND created_at <= $${catIdx++}`; }
+      if (type) { catWhere += ` AND type = $${catIdx++}`; }
       rows = await all(`
         SELECT category as "分类", type as "类型", count as "笔数",
                total as "总金额", avg_amount as "平均金额"
@@ -232,22 +242,28 @@ router.get('/export', authMiddleware, async (req, res) => {
           SELECT category, type, COUNT(*) as count,
                  COALESCE(SUM(amount), 0) as total,
                  COALESCE(AVG(amount), 0) as avg_amount
-          FROM transactions ${where}
+          FROM transactions ${catWhere}
           GROUP BY category, type
         ) sub ORDER BY total DESC
-      `, params);
+      `, catParams);
       headers = ['分类', '类型', '笔数', '总金额', '平均金额'];
       filename = `分类统计报表_${startDate || '全时期'}_${endDate || '至今'}.csv`;
     } else {
+      const txParams = [...params];
+      let txIdx = 1;
+      let txWhere = 'WHERE 1=1';
+      if (startDate) { txWhere += ` AND t.created_at >= $${txIdx++}`; }
+      if (endDate) { txWhere += ` AND t.created_at <= $${txIdx++}`; }
+      if (type) { txWhere += ` AND t.type = $${txIdx++}`; }
       rows = await all(`
         SELECT t.id, t.type, t.category, t.amount, t.description,
                u.username as creator, t.receipt_path, t.created_at
         FROM transactions t
         LEFT JOIN users u ON t.created_by = u.id
-        ${where}
+        ${txWhere}
         ORDER BY t.created_at DESC
         LIMIT 5000
-      `, params);
+      `, txParams);
       headers = ['ID', '类型', '分类', '金额', '描述', '创建人', '票据链接', '创建时间'];
       filename = `收支明细报表_${startDate || '全时期'}_${endDate || '至今'}.csv`;
     }
@@ -275,15 +291,22 @@ router.get('/export-zip', authMiddleware, async (req, res) => {
     if (type) { where += ` AND type = $${idx++}`; params.push(type); }
 
     // Get transactions with receipts
+    const txParams = [...params];
+    let txIdx = 1;
+    let txWhere = 'WHERE 1=1';
+    if (startDate) { txWhere += ` AND t.created_at >= $${txIdx++}`; }
+    if (endDate) { txWhere += ` AND t.created_at <= $${txIdx++}`; }
+    if (type) { txWhere += ` AND t.type = $${txIdx++}`; }
+
     const rows = await all(`
       SELECT t.id, t.type, t.category, t.amount, t.description,
              u.username as creator, t.receipt_path, t.created_at
       FROM transactions t
       LEFT JOIN users u ON t.created_by = u.id
-      ${where}
+      ${txWhere}
       ORDER BY t.created_at DESC
       LIMIT 1000
-    `, params);
+    `, txParams);
 
     const period = `${startDate || '全时期'}_${endDate || '至今'}`;
     const filename = `财务报表_${period}.zip`;
@@ -320,16 +343,20 @@ router.get('/export-zip', authMiddleware, async (req, res) => {
     }
 
     // Also export purchase requests
-    const reqWhere = where.replace('created_at', 'r.created_at');
+    const reqParams2 = [...params];
+    let reqIdx2 = 1;
+    let reqWhere2 = 'WHERE 1=1';
+    if (startDate) { reqWhere2 += ` AND r.created_at >= $${reqIdx2++}`; }
+    if (endDate) { reqWhere2 += ` AND r.created_at <= $${reqIdx2++}`; }
     const reqRows = await all(`
       SELECT r.id, r.title, r.amount, r.category, r.status, r.description,
              u.real_name as applicant_name, r.created_at, r.updated_at
       FROM purchase_requests r
       JOIN users u ON r.applicant_id = u.id
-      ${reqWhere}
+      ${reqWhere2}
       ORDER BY r.created_at DESC
       LIMIT 500
-    `, params);
+    `, reqParams2);
     const reqHeaders = ['ID', '标题', '金额', '分类', '状态', '描述', '申请人', '创建时间', '更新时间'];
     const reqCsv = generateCSV(reqHeaders, reqRows);
     archive.append(reqCsv, { name: '采购申请.csv' });
