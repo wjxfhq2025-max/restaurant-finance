@@ -379,7 +379,9 @@ router.get('/export-report', authMiddleware, async (req, res) => {
   .t-inc{color:#52c41a}.t-exp{color:#ff4d4f}
   .amt{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums}
   .rcpt img{max-width:80px;max-height:80px;border-radius:4px;cursor:pointer;border:1px solid #e8e8e8;transition:all .2s}
-  .rcpt img:hover{max-width:400px;max-height:400px;box-shadow:0 4px 16px rgba(0,0,0,.15)}
+  .lightbox{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center;cursor:pointer}
+  .lightbox.show{display:flex}
+  .lightbox img{max-width:90%;max-height:90%;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.3)}
   .st-pending{color:#faad14}.st-approved{color:#52c41a}.st-rejected{color:#ff4d4f}
   .ft{text-align:center;color:#aaa;font-size:12px;margin-top:24px}
   .warn{color:#faad14;font-size:13px;margin-bottom:12px}
@@ -433,7 +435,9 @@ router.get('/export-report', authMiddleware, async (req, res) => {
     if (receiptRows.length > maxImages) {
       html += `<div class="warn">⚠️ 共 ${receiptRows.length} 张票据，本次仅嵌入前 ${maxImages} 张，如需全部请缩小日期范围分批导出。</div>`;
     }
-    html += `<div class="ft">导出时间: ${new Date().toLocaleString('zh-CN')} · 餐厅财务管理系统</div>\n</body></html>`;
+    html += `<div class="lightbox" onclick="this.classList.remove('show')"><img src="" id="lb-img"></div>
+<script>document.querySelectorAll('.rcpt img').forEach(i=>{i.addEventListener('click',()=>{const lb=document.querySelector('.lightbox');document.getElementById('lb-img').src=i.src;lb.classList.add('show')})})</script>
+<div class="ft">导出时间: ${new Date().toLocaleString('zh-CN')} · 餐厅财务管理系统</div>\n</body></html>`;
 
     const filename = `财务报表_${startDate || '全部'}_${endDate || '至今'}.html`;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
