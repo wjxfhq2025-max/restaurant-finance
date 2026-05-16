@@ -30,6 +30,7 @@ const RequestDetailPage = {
     let currentStageIdx = 0;
     if (request.status === 'pending_finance') currentStageIdx = 1;
     if (request.status === 'pending_shareholder') currentStageIdx = 2;
+    const isFullyApproved = request.status === 'approved';
     
     let flowHtml = '<div class="approval-flow">';
     stages.forEach((stage, idx) => {
@@ -46,6 +47,10 @@ const RequestDetailPage = {
           indicatorClass = 'rejected';
           desc = `${stage.role}已拒绝: ${approval.comment || ''}`;
         }
+      } else if (isFullyApproved) {
+        // 已通过但没有审批记录（可能是旧数据或管理员直接操作）
+        indicatorClass = 'done';
+        desc = `${stage.role}已通过`;
       } else if (idx === currentStageIdx && isPending) {
         indicatorClass = 'current';
         desc = `等待${stage.role}审批中...`;

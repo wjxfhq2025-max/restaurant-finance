@@ -125,13 +125,7 @@ const App = {
           👤 ${user.real_name || user.username} ▾
         </span>
         <div id="userSwitchMenu" style="display:none;position:absolute;top:100%;right:0;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-sm);min-width:140px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:4px 0;">
-          <div style="padding:6px 14px;font-size:12px;color:var(--text-muted);border-bottom:1px solid var(--border);">切换账号</div>
-          <div class="user-switch-item" onclick="App.switchUser('admin','admin123')">🔑 管理员</div>
-          <div class="user-switch-item" onclick="App.switchUser('purchaser1','purchase123')">🛒 采购员</div>
-          <div class="user-switch-item" onclick="App.switchUser('supervisor','super123')">👔 主管</div>
-          <div class="user-switch-item" onclick="App.switchUser('finance','finance123')">💰 财务</div>
-          <div class="user-switch-item" onclick="App.switchUser('shareholder','share123')">📊 股东</div>
-          <div style="border-top:1px solid var(--border);margin:4px 0;"></div>
+          <div class="user-switch-item" onclick="App.switchUserLogout()">🔄 切换账号</div>
           <div class="user-switch-item" onclick="App.switchUserLogout()" style="color:var(--expense);">🚪 退出登录</div>
         </div>
       </div>`;
@@ -177,22 +171,6 @@ const App = {
     e.stopPropagation();
     const menu = document.getElementById('userSwitchMenu');
     if (menu) menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
-  },
-
-  async switchUser(username, password) {
-    try {
-      Utils.showLoading(document.getElementById('appMain'));
-      await API.request('POST', '/auth/login', { username, password });
-      const user = await API.getMe();
-      window.__currentUser = user;
-      document.getElementById('userSwitchMenu').style.display = 'none';
-      this.updateHeader();
-      this.updateNav();
-      Utils.showToast(`已切换为 ${user.real_name || user.username}`);
-      location.hash = '#/home';
-    } catch (err) {
-      Utils.showToast('切换失败: ' + err.message);
-    }
   },
 
   async switchUserLogout() {
