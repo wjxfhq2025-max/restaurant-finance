@@ -64,12 +64,48 @@ const uploadToCloudinary = (fileBuffer) => {
         if (error) reject(error);
         else resolve({
           url: result.secure_url,
-          size: result.bytes  // 压缩后大小
+          size: result.bytes,  // 压缩后大小
+          publicId: result.public_id  // 用于后续删除
         });
       }
     );
     stream.end(fileBuffer);
   });
+};
+
+// 辅助函数：检查存储用量，超90%自动删除最早的图片
+const ensureStorageSpace = async () => {
+  try {
+    const usage = await cloudinary.api.usage();
+    const storage = usage?.storage;
+    const used = (storage?.used ?? 0) * 1024 * 1024;
+    const limit = (storage?.limit ?? 1024) * 1024 * 1024;
+    const percent = limit > 0 ? (used / limit) * 100 : 0;
+    
+    if (percent < 90) return;  // 存储充足，不需要清理
+    
+    console.log(`[Storage] 用量 ${percent.toFixed(1)}%，开始自动清理最早图片...`);
+    
+    // 按创建时间升序获取最早的图片（最多删5张腾出空间）
+    const resources = await cloudinary.api.resources({
+      type: 'upload',
+      prefix: 'restaurant-finance/receipts/',
+      max_results: 10,
+      direction: 'asc'
+    });
+    
+    if (!resources?.resources?.length) return;
+    
+    // 删除最早的3张图片
+    const toDelete = resources.resources.slice(0, 3).map(r => r.public_id);
+    if (toDelete.length > 0) {
+      await cloudinary.api.delete_resources(toDelete);
+      console.log(`[Storage] 已删除 ${toDelete.length} 张最早图片以释放空间`);
+    }
+  } catch (err) {
+    console.error('[Storage] 自动清理失败:', err.message);
+    // 清理失败不阻塞上传
+  }
 };
 
 // 列出交易记录
@@ -127,6 +163,8 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
     let receiptUrl = null;
     let compressedSize = null;
     if (req.file) {
+      // 检查存储空间，超90%自动清理最早图片
+      await ensureStorageSpace();
       // 上传到 Cloudinary（自动压缩+转WebP）
       const result = await uploadToCloudinary(req.file.buffer);
       receiptUrl = result.url;
