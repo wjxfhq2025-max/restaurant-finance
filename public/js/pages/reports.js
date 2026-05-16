@@ -531,15 +531,15 @@ const ReportsPage = {
             <div style="font-size:11px;color:var(--text-muted);">总申请</div>
             <div style="font-size:20px;font-weight:bold;">${s.total || 0}</div>
           </div>
-          <div style="text-align:center;padding:10px;background:#fef3c7;border-radius:8px;">
+          <div class="req-status-card" data-status="pending" style="text-align:center;padding:10px;background:#fef3c7;border-radius:8px;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;" onclick="ReportsPage.showRequestsByStatus('pending','⏳ 待审批')" title="点击查看详情">
             <div style="font-size:11px;color:#92400e;">⏳ 待审批</div>
             <div style="font-size:20px;font-weight:bold;color:#d97706;">${s.pending || 0}</div>
           </div>
-          <div style="text-align:center;padding:10px;background:#dcfce7;border-radius:8px;">
+          <div class="req-status-card" data-status="approved" style="text-align:center;padding:10px;background:#dcfce7;border-radius:8px;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;" onclick="ReportsPage.showRequestsByStatus('approved','✅ 已通过')" title="点击查看详情">
             <div style="font-size:11px;color:#166534;">✅ 已通过</div>
             <div style="font-size:20px;font-weight:bold;color:#16a34a;">${s.approved || 0}</div>
           </div>
-          <div style="text-align:center;padding:10px;background:#fee2e2;border-radius:8px;">
+          <div class="req-status-card" data-status="rejected" style="text-align:center;padding:10px;background:#fee2e2;border-radius:8px;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;" onclick="ReportsPage.showRequestsByStatus('rejected','❌ 已拒绝')" title="点击查看详情">
             <div style="font-size:11px;color:#991b1b;">❌ 已拒绝</div>
             <div style="font-size:20px;font-weight:bold;color:#dc2626;">${s.rejected || 0}</div>
           </div>
@@ -552,9 +552,72 @@ const ReportsPage = {
             <div style="font-size:17px;font-weight:bold;color:#16a34a;">${Utils.formatMoney(s.approvedAmount || 0)}</div>
           </div>
         </div>
+
+        <!-- 采购申请详情弹窗 -->
+        <div id="requestsDetailModal" class="modal-overlay" style="display:none;z-index:999;">
+          <div class="modal-box" style="max-width:500px;width:90%;max-height:70vh;display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0;">
+              <h3 id="requestsDetailTitle" style="margin:0;font-size:16px;"></h3>
+              <button onclick="document.getElementById('requestsDetailModal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
+            </div>
+            <div id="requestsDetailList" style="overflow-y:auto;flex:1;min-height:100px;"></div>
+          </div>
+        </div>
       `;
     } catch (err) {
       console.error('Load requests error:', err);
+    }
+  },
+
+  // ========== 采购申请状态详情弹窗 ==========
+
+  async showRequestsByStatus(status, title) {
+    const modal = document.getElementById('requestsDetailModal');
+    const titleEl = document.getElementById('requestsDetailTitle');
+    const listEl = document.getElementById('requestsDetailList');
+    if (!modal || !listEl) return;
+
+    modal.style.display = 'flex';
+    if (titleEl) titleEl.textContent = title;
+    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">加载中...</div>';
+
+    try {
+      const params = new URLSearchParams({ startDate: this.startDate, endDate: this.endDate });
+      const data = await API.request('GET', `/reports/requests?${params.toString()}`).catch(() => ({ requests: [] }));
+
+      let filtered = (data.requests || []);
+      if (status === 'pending') {
+        filtered = filtered.filter(r => r.status && r.status.startsWith('pending_'));
+      } else {
+        filtered = filtered.filter(r => r.status === status);
+      }
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">暂无数据</div>';
+        return;
+      }
+
+      const statusMap = { pending_supervisor: '待主管审批', pending_finance: '待财务审批', pending_shareholder: '待股东审批', approved: '已通过', rejected: '已拒绝' };
+      const statusColorMap = { pending_supervisor: '#d97706', pending_finance: '#d97706', pending_shareholder: '#d97706', approved: '#16a34a', rejected: '#dc2626' };
+
+      listEl.innerHTML = filtered.map(r => {
+        const st = statusMap[r.status] || r.status;
+        const sc = statusColorMap[r.status] || '#666';
+        return `
+          <div style="padding:10px 12px;border-bottom:1px solid var(--border-color);cursor:pointer;" onclick="document.getElementById('requestsDetailModal').style.display='none';App.navigate('#/requests/detail/${r.id}')">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="font-weight:600;font-size:14px;">${r.title || '-'}</span>
+              <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:${sc}20;color:${sc};">${st}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);">
+              <span>${r.applicant_name || '-'} · ${Utils.formatDate(r.created_at)}</span>
+              <span style="font-weight:600;">¥${Number(r.amount || 0).toFixed(2)}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (err) {
+      listEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--expense);">加载失败: ${err.message}</div>`;
     }
   },
 
