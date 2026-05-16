@@ -3,8 +3,44 @@ const https = require('https');
 const http = require('http');
 const { get, all } = require('../database');
 const { authMiddleware } = require('../middleware/auth');
+const cloudinary = require('cloudinary').v2;
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 const router = express.Router();
+
+// ========== Storage Monitor ==========
+router.get('/storage', authMiddleware, async (req, res) => {
+  try {
+    // Cache for 10 minutes
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    
+    const result = await cloudinary.api.usage({ usage_type: 'storage' });
+    const storage = result?.storage;
+    const usedBytes = (storage?.used ?? 0) * 1024 * 1024;
+    const limitBytes = (storage?.limit ?? 1024) * 1024 * 1024;
+    const usagePercent = limitBytes > 0 ? Math.round((usedBytes / limitBytes) * 100) : 0;
+    
+    // Also get image count
+    const images = await cloudinary.api.resources({ type: 'upload', max_results: 500, prefix: 'receipts/' });
+    const imageCount = images?.resources?.length || 0;
+
+    res.json({
+      usedMB: Math.round(usedBytes / 1024 / 1024 * 100) / 100,
+      limitMB: Math.round(limitBytes / 1024 / 1024),
+      usagePercent,
+      imageCount,
+      warning: usagePercent >= 80
+    });
+  } catch (err) {
+    console.error('Storage check error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ========== Financial Reports ==========
 

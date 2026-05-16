@@ -105,6 +105,12 @@ const ReportsPage = {
         <div id="requests-summary"></div>
       </div>
 
+      <!-- 存储监控 -->
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">💾 存储用量</div>
+        <div id="storage-widget" style="text-align:center;padding:8px 0;"><span style="color:#aaa">加载中...</span></div>
+      </div>
+
       <!-- 导出按钮区 -->
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:8px;margin-bottom:20px;">
         <button class="btn btn-primary" onclick="ReportsPage.exportReport()" style="padding:10px 18px;">📄 导出完整报表(含票据)</button>
@@ -171,7 +177,8 @@ const ReportsPage = {
     await Promise.all([
       this.loadSummary(),
       this.loadTransactions(),
-      this.loadRequestsSummary()
+      this.loadRequestsSummary(),
+      this.loadStorage()
     ]);
   },
 
@@ -557,6 +564,28 @@ const ReportsPage = {
   },
 
   // ========== 导出功能 ==========
+
+  async loadStorage() {
+    const el = document.getElementById('storage-widget');
+    if (!el) return;
+    try {
+      const data = await API.request('GET', '/reports/storage');
+      const pct = data.usagePercent || 0;
+      const color = pct >= 90 ? '#ff4d4f' : pct >= 80 ? '#faad14' : '#52c41a';
+      const warnText = data.warning ? '<div style="color:#ff4d4f;font-size:13px;margin-top:6px;">⚠️ 存储空间不足，请及时清理旧图片或升级套餐</div>' : '';
+      el.innerHTML = `
+        <div style="font-size:28px;font-weight:bold;color:${color};margin-bottom:4px;">${pct}%</div>
+        <div style="color:#888;font-size:13px;">已用 ${data.usedMB} MB / ${data.limitMB} MB</div>
+        <div style="background:#f0f0f0;border-radius:4px;height:8px;margin:8px auto;max-width:200px;overflow:hidden;">
+          <div style="background:${color};height:100%;width:${Math.min(pct, 100)}%;border-radius:4px;transition:width .3s;"></div>
+        </div>
+        <div style="color:#aaa;font-size:12px;">${data.imageCount} 张票据图片</div>
+        ${warnText}
+      `;
+    } catch (err) {
+      el.innerHTML = '<span style="color:#ccc">存储监控不可用</span>';
+    }
+  },
 
   exportCSV(type) {
     const startDate = document.getElementById('r-start')?.value || this.startDate;
