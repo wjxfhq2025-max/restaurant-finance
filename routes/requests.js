@@ -44,25 +44,31 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// Helper: check if user has a role (supports comma-separated roles)
+const hasRole = (userRole, checkRole) => userRole && userRole.split(',').map(r => r.trim()).includes(checkRole);
+
 // Get pending requests for current user (to approve)
 router.get('/pending/mine', authMiddleware, async (req, res) => {
   try {
     const role = req.session.role;
-    let stage = '';
+    let stages = [];
     
-    if (role === 'supervisor') stage = 'pending_supervisor';
-    else if (role === 'finance') stage = 'pending_finance';
-    else if (role === 'admin') stage = 'pending_admin';
+    if (hasRole(role, 'supervisor')) stages.push('pending_supervisor');
+    if (hasRole(role, 'finance')) stages.push('pending_finance');
+    if (hasRole(role, 'shareholder')) stages.push('pending_shareholder');
+    if (hasRole(role, 'admin')) stages.push('pending_supervisor', 'pending_finance', 'pending_shareholder');
     
-    if (!stage) return res.json([]);
+    if (stages.length === 0) return res.json([]);
     
+    const uniqueStages = [...new Set(stages)];
+    const placeholders = uniqueStages.map((_, i) => `$${i+1}`).join(',');
     const rows = await all(
       `SELECT r.*, u.real_name as applicant_name 
        FROM purchase_requests r 
        JOIN users u ON r.applicant_id = u.id 
-       WHERE r.status = $1 
+       WHERE r.status IN (${placeholders}) 
        ORDER BY r.created_at DESC`,
-      [stage]
+      uniqueStages
     );
     res.json(rows || []);
   } catch (err) {
@@ -119,11 +125,13 @@ router.post('/:id/approve', authMiddleware, async (req, res) => {
     if (!request) return res.status(404).json({ error: '申请不存在' });
     
     let newStatus = request.status;
-    if (role === 'supervisor' && request.status === 'pending_supervisor') {
+    if (hasRole(role, 'supervisor') && request.status === 'pending_supervisor') {
       newStatus = 'pending_finance';
-    } else if (role === 'finance' && request.status === 'pending_finance') {
-      newStatus = 'pending_admin';
-    } else if ((role === 'admin' || role === 'supervisor') && request.status === 'pending_admin') {
+    } else if (hasRole(role, 'finance') && request.status === 'pending_finance') {
+      newStatus = request.amount >= 10000 ? 'pending_shareholder' : 'approved';
+    } else if (hasRole(role, 'shareholder') && request.status === 'pending_shareholder') {
+      newStatus = 'approved';
+    } else if (hasRole(role, 'admin') && (request.status.startsWith('pending_'))) {
       newStatus = 'approved';
     }
     

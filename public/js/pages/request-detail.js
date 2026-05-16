@@ -95,12 +95,12 @@ const RequestDetailPage = {
       const expectedStage = stageMap[request.status];
       
       // Show approve/reject buttons if user can approve
-      // We'll let the backend validate, just show for relevant roles
+      const hasRole = (r, check) => r && r.split(',').map(x => x.trim()).includes(check);
       const canApprove = currentUser && (
-        (expectedStage === 'supervisor' && currentUser.role === 'supervisor') ||
-        (expectedStage === 'finance' && currentUser.role === 'finance') ||
-        (expectedStage === 'shareholder' && currentUser.role === 'shareholder') ||
-        currentUser.role === 'admin'
+        (expectedStage === 'supervisor' && hasRole(currentUser.role, 'supervisor')) ||
+        (expectedStage === 'finance' && hasRole(currentUser.role, 'finance')) ||
+        (expectedStage === 'shareholder' && hasRole(currentUser.role, 'shareholder')) ||
+        hasRole(currentUser.role, 'admin')
       );
       
       if (canApprove) {
